@@ -18,7 +18,7 @@ Each patch is selectable individually.
 | [BuildCraft 3.4.3](#buildcraft-343) | `quarry` · `filler` · `quarrychunks` |
 | [ComputerCraft 1.5](#computercraft-15) | `turtle` · `packets` |
 | [immibis-core 52.4.6](#immibis-core-5246-tubestuff) (Tubestuff) | `mergenbt` |
-| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` |
+| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` · `tubeinject` |
 | [ThermalExpansion 2.2.2.2](#thermalexpansion-2222) | `packets` |
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
 | [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` |
@@ -508,6 +508,24 @@ held the item. The item is out, and the bag still has it. It was banned as "caus
 click on the slot holding the open bag. Neither is needed while the bag is open.
 
 **Verified** with 64 diamonds in a bag. Stock: 128 diamonds after one key press. Patched: 64.
+
+</details>
+
+<details>
+<summary><b><code>tubeinject</code>: inject real items into RedPower tubes with a description packet</b></summary>
+
+**The bug.** `CoreProxy.processPacket211`, on the server, looked up the tile at the packet's
+coordinates and called its `handlePacket` with no check. Packet 211 is a description packet the
+server only ever sends to clients, so nothing legitimate sends it back; a modified client could
+send one that made a tube clear its contents and add client-supplied items, which the tube then
+delivers into inventories as real items, or crash the handler with an out-of-range item id.
+
+**The patch.** The server branch of `processPacket211` returns immediately, so the server ignores
+these packets. The client branch (which applies a real description update for rendering) is
+untouched.
+
+**Verified** on the test server: the coremod logs `patched com.eloraam.redpower.core.CoreProxy`
+and RedPower loads normally.
 
 </details>
 

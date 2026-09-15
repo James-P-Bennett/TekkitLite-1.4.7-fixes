@@ -18,6 +18,7 @@ import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import cpw.mods.fml.relauncher.IClassTransformer;
@@ -49,13 +50,15 @@ public class TLiteTransformer implements IClassTransformer {
     static final String EXPLOSION = "ic2/core/ExplosionIC2";
     static final String BAG = "com/eloraam/redpower/base/ContainerBag";
     static final String CLICK = "(IIILqx;)Lur;";
+    static final String COREPROXY = "com/eloraam/redpower/core/CoreProxy";
 
     public byte[] transform(String name, byte[] bytes) {
         if (name == null || bytes == null) {
             return bytes;
         }
         String internal = name.replace('.', '/');
-        if (!internal.equals(LASER) && !internal.equals(EXPLOSION) && !internal.equals(BAG)) {
+        if (!internal.equals(LASER) && !internal.equals(EXPLOSION) && !internal.equals(BAG)
+                && !internal.equals(COREPROXY)) {
             return bytes;
         }
         try {
@@ -78,6 +81,7 @@ public class TLiteTransformer implements IClassTransformer {
         boolean ok;
         if (internal.equals(LASER)) ok = patchLaser(cn);
         else if (internal.equals(EXPLOSION)) ok = patchExplosion(cn);
+        else if (internal.equals(COREPROXY)) ok = patchCoreProxy(cn);
         else ok = patchBag(cn);
         if (!ok) {
             return null;
@@ -179,7 +183,33 @@ public class TLiteTransformer implements IClassTransformer {
     }
 
     /**
-     * Build check: TLiteTransformer <ic2.jar> <RedPowerCore.zip>. Patches the three classes from
+     * RedPower CoreProxy.processPacket211(Packet211TileDesc, eg): the server branch (nh instanceof
+     * iv) looks up the tile at the packet's coordinates and calls its handlePacket, letting a
+     * client inject real items into tubes and crash the handler with a bad item id. That branch is
+     * attacker-only (211 is a server-to-client description packet no RP client sends back), so it
+     * returns immediately when the handler is the server's. The client branch is untouched.
+     */
+    static boolean patchCoreProxy(ClassNode cn) {
+        int hits = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("processPacket211")) continue;
+            InsnList g = new InsnList();
+            LabelNode client = new LabelNode();
+            g.add(new VarInsnNode(Opcodes.ALOAD, 2));
+            g.add(new TypeInsnNode(Opcodes.INSTANCEOF, "iv"));
+            g.add(new JumpInsnNode(Opcodes.IFEQ, client));
+            g.add(new InsnNode(Opcodes.RETURN));
+            g.add(client);
+            m.instructions.insert(g);
+            m.maxStack = Math.max(m.maxStack, 1);
+            hits++;
+        }
+        return hits == 1;
+    }
+
+    /**
+     * Build check: TLiteTransformer <ic2.jar> <RedPowerCore.zip>. Patches the classes from
      * the stock jars and exits non zero unless every one applies.
      */
     public static void main(String[] args) throws IOException {
@@ -187,7 +217,7 @@ public class TLiteTransformer implements IClassTransformer {
             System.err.println("usage: TLiteTransformer <ic2.jar> <RedPowerCore.zip>");
             System.exit(2);
         }
-        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG } };
+        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG }, { args[1], COREPROXY } };
         boolean failed = false;
         for (String[] check : checks) {
             ZipFile zf = new ZipFile(check[0]);
