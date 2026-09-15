@@ -18,15 +18,23 @@ import java.util.zip.*;
  *            BlockTurtle.onBlockPlacedBy          ends with TLiteTurtle.placed(world, x, y, z, placer)
  *            BlockTurtle.onBlockActivated         starts with TLiteTurtle.adopt(world, x, y, z, player)
  *
+ *   packets  ComputerCraftProxyCommon.handlePacket
+ *              entity.handlePacket(packet, player) -> TLiteCC.handlePacket(entity, packet, player)
+ *
+ * The turtle patch stops turtles editing claims. The packet patch stops any player driving
+ * anyone else's computer or turtle from afar (typing into its terminal, rebooting it, etc.).
+ *
  * Turtles change and empty the blocks next to them with no protection check, so they dig, build
  * and move inside other players' claims.
  *
- * usage: PatchCC <in.zip> <out.zip> <patch>[,<patch>...] <TLiteTurtle.class> <TLiteProtect.class>
+ * usage: PatchCC <in.zip> <out.zip> <patch>[,<patch>...] <helper.class...>
  */
 public class PatchCC {
 
     static final String HELPER = "TLiteTurtle";
     static final String TILE = "dan200/turtle/shared/TileEntityTurtle";
+    static final String PROXY = "dan200/computer/shared/ComputerCraftProxyCommon";
+    static final String NETWORKED = "dan200/computer/shared/INetworkedEntity";
     static final String BLOCK = "dan200/turtle/shared/BlockTurtle";
 
     static final String PLACED = "(Lyc;IIILmd;)V";
@@ -41,18 +49,19 @@ public class PatchCC {
         { "dropQuantity", "(II)Z", "1", "Turtle drop" },
     };
 
-    static boolean doTurtle;
+    static boolean doTurtle, doPackets;
     static final Map<String, Integer> hits = new LinkedHashMap<String, Integer>();
 
     public static void main(String[] args) throws Exception {
         if (args.length < 5) {
-            System.err.println("usage: PatchCC <in.zip> <out.zip> <patches> <TLiteTurtle.class> <TLiteProtect.class>");
-            System.err.println("patches: turtle");
+            System.err.println("usage: PatchCC <in.zip> <out.zip> <patches> <helper.class...>");
+            System.err.println("patches: turtle, packets");
             System.exit(2);
         }
         for (String p : args[2].split(",")) {
             p = p.trim();
             if (p.equals("turtle")) doTurtle = true;
+            else if (p.equals("packets")) doPackets = true;
             else throw new IllegalArgumentException("unknown patch: " + p);
         }
 
@@ -65,6 +74,7 @@ public class PatchCC {
             String n = ze.getName();
             if (doTurtle && n.equals(TILE + ".class")) d = patchTile(d);
             if (doTurtle && n.equals(BLOCK + ".class")) d = patchBlock(d);
+            if (doPackets && n.equals(PROXY + ".class")) d = patchProxy(d);
             out.put(n, d);
         }
         zf.close();
@@ -88,6 +98,9 @@ public class PatchCC {
                     throw new IllegalStateException("turtle " + en.getKey() + ": expected " + en.getValue() + " sites, patched " + got);
             }
         }
+
+        if (doPackets && !hits.containsKey("packets"))
+            throw new IllegalStateException("packets: expected 1 handlePacket dispatch, patched none");
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -151,6 +164,24 @@ public class PatchCC {
                 beforeReturns(m, call);
                 m.maxStack = Math.max(m.maxStack, 2);
                 hit("nbt");
+            }
+        }
+        return write(cn);
+    }
+
+    /** Redirects the one INetworkedEntity.handlePacket call in the proxy to the helper. */
+    static byte[] patchProxy(byte[] in) {
+        ClassNode cn = read(in);
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("handlePacket")) continue;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.INVOKEINTERFACE) continue;
+                MethodInsnNode mi = (MethodInsnNode) i;
+                if (!mi.owner.equals(NETWORKED) || !mi.name.equals("handlePacket")) continue;
+                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteCC", "handlePacket",
+                        "(L" + NETWORKED + ";" + mi.desc.substring(1), false));
+                hit("packets");
             }
         }
         return write(cn);

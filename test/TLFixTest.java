@@ -51,6 +51,9 @@ import buildcraft.factory.TileQuarry;
 
 import dan200.turtle.shared.TileEntityTurtle;
 
+import dan200.computer.shared.ContainerComputer;
+import dan200.computer.shared.TileEntityComputer;
+
 /**
  * Test harness for TekkitLite-1.4.7-fixes. Runs a scenario against the live server's world
  * and prints what the stock or patched mod did, so a result can be compared between jars.
@@ -74,6 +77,7 @@ import dan200.turtle.shared.TileEntityTurtle;
  *   tlfix quarry     BuildCraft Quarry placed outside a claim mining a block inside it
  *   tlfix turtle     ComputerCraft mining turtle outside a claim digging and moving into it
  *   tlfix quarrychunks  BuildCraft Quarry with a 5x5 chunk area keeping its own chunk, and the ticket callback
+ *   tlfix ccpacket   ComputerCraft packet guard: drive a computer from afar, from another GUI, and legitimately
  *
  * The claim is owned by "Owner" and every action is done by the fake player "Intruder", who
  * has no trust in it. Default package so the obfuscated vanilla classes can be named.
@@ -86,7 +90,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -110,6 +114,7 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("quarry")) quarry(sender);
             else if (s.equals("turtle")) turtle(sender);
             else if (s.equals("quarrychunks")) quarrychunks(sender);
+            else if (s.equals("ccpacket")) ccpacket(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -864,6 +869,43 @@ public class TLFixTest extends JavaPlugin {
                 + "  (stock false of 25 and threw NullPointerException, fixed true of 25 and ran)");
         w.e(qx + 2, y, qz, 0);
         w.e(qx, y, qz, 0);
+    }
+
+    /**
+     * Two computers next to each other. TLiteCC.allowed is what the patched proxy consults before
+     * it lets a packet drive a computer. Intruder with no GUI and Intruder with the other
+     * computer's GUI open must both be refused for computer A; Owner with A's GUI open is allowed.
+     */
+    private void ccpacket(CommandSender sender) {
+        yc w = world();
+        int[] p = spot();
+        int x = p[0] + OPEN_OFFSET, y = p[1] + 45, z = p[2];
+        w.d(x, y, z, 207, 0);                                             // Computer A
+        w.d(x + 1, y, z, 207, 0);                                         // Computer B
+        TileEntityComputer a = (TileEntityComputer) w.q(x, y, z);
+        TileEntityComputer b = (TileEntityComputer) w.q(x + 1, y, z);
+
+        iq intruder = intruder(w);
+        intruder.b(x + 0.5, y + 1.0, z + 1.5);
+        iq owner = CraftFakePlayer.get(w, "Owner", true);
+        owner.b(x + 0.5, y + 1.0, z + 1.5);
+
+        intruder.bL = intruder.bK;                                       // no GUI open
+        boolean afar = TLiteCC.allowed(a, intruder);
+
+        intruder.bL = new ContainerComputer(b);                          // B's GUI open, aiming at A
+        boolean wrongGui = TLiteCC.allowed(a, intruder);
+
+        owner.bL = new ContainerComputer(a);                             // A's GUI open
+        boolean legit = TLiteCC.allowed(a, owner);
+
+        sender.sendMessage(TAG + "ccpacket: drive from afar allowed=" + afar + ", from another computer's GUI allowed="
+                + wrongGui + ", with the computer's own GUI allowed=" + legit + "  (expect false, false, true)");
+
+        intruder.bL = intruder.bK;
+        owner.bL = owner.bK;
+        w.e(x, y, z, 0);
+        w.e(x + 1, y, z, 0);
     }
 
     private static int diamonds(iq player) {

@@ -50,11 +50,11 @@ mkdir -p build/cls build/tool
 "$JAVAC8" -nowarn -source 1.6 -target 1.6 \
   -bootclasspath "$(dirname "$JAVAC8")/../jre/lib/rt.jar" \
   -cp "$MCPC:$MFR_SRC:$PCC:$EE3_SRC:$IC2_SRC:$IMMIBIS_SRC:$RPCORE_SRC:$BC_SRC:$CC_SRC:$TC_SRC:$BSPKRS:$NEI_SRC:$CCC" -d build/cls \
-  src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java src/TLiteImmibis.java src/TLiteBC.java src/TLiteTurtle.java 2>&1 \
+  src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java src/TLiteImmibis.java src/TLiteBC.java src/TLiteTurtle.java src/TLiteCC.java 2>&1 \
   | grep -vE 'bootstrap class path|source value 1\.6|target value 1\.6|options|unchecked' || true
 
 for f in build/cls/TLiteProtect.class build/cls/TLiteMFR.class build/cls/TLiteEE3.class \
-         build/cls/TLiteTreeCap.class build/cls/TLiteNEI.class build/cls/TLiteImmibis.class build/cls/TLiteBC.class build/cls/TLiteTurtle.class; do
+         build/cls/TLiteTreeCap.class build/cls/TLiteNEI.class build/cls/TLiteImmibis.class build/cls/TLiteBC.class build/cls/TLiteTurtle.class build/cls/TLiteCC.class; do
   [ -f "$f" ] || { echo "helper class missing after compile: $f" >&2; exit 1; }
 done
 
@@ -91,8 +91,8 @@ patch_one "BuildCraft" "$BC_SRC" "buildcraft-A-3.4.3-patched.jar" \
           build/cls/TLiteBC.class build/cls/TLiteProtect.class
 
 patch_one "ComputerCraft" "$CC_SRC" "ComputerCraft1.5-patched.zip" \
-          PatchCC.java "turtle" \
-          build/cls/TLiteTurtle.class build/cls/TLiteProtect.class
+          PatchCC.java "turtle,packets" \
+          build/cls/TLiteTurtle.class build/cls/TLiteProtect.class build/cls/TLiteCC.class
 
 # Coremods. Server side like the rest: they go in the server's coremods/ folder.
 patch_one "TreeCapitator" "$TC_SRC" "[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.CoreMod-patched.jar" \

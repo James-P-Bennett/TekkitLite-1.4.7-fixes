@@ -16,7 +16,7 @@ Each patch is selectable individually.
 | [TreeCapitator 1.4.6 r07](#treecapitator-146-r07-coremod) (coremod) | `felling` |
 | [NotEnoughItems 1.4.7.0](#notenoughitems-1470-coremod) (coremod) | `spawner` · `creative` |
 | [BuildCraft 3.4.3](#buildcraft-343) | `quarry` · `filler` · `quarrychunks` |
-| [ComputerCraft 1.5](#computercraft-15) | `turtle` |
+| [ComputerCraft 1.5](#computercraft-15) | `turtle` · `packets` |
 | [immibis-core 52.4.6](#immibis-core-5246-tubestuff) (Tubestuff) | `mergenbt` |
 | [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` |
 
@@ -411,6 +411,27 @@ moved on open ground.
 
 </details>
 
+<details>
+<summary><b><code>packets</code>: type into and take over anyone's computer or turtle from anywhere</b></summary>
+
+**The bug.** `ComputerCraftProxyCommon.handlePacket` reads a block position from the client
+packet, looks up the tile entity there and calls its `handlePacket` with the sender. It never
+checks the sender owns or has that tile's GUI open, and the lookup loads chunks anywhere. A
+modified client can aim a packet at any computer or turtle and type into its terminal (running
+arbitrary Lua as that computer: read or wipe its files, drive its turtle and peripherals),
+reboot it, shut it down, terminate it, or read its screen, from anywhere on the server. This is
+the same class of bug as the MFR and NEI packet fixes.
+
+**The patch.** The dispatch goes through `TLiteCC.handlePacket`. For the tiles a player drives
+through a GUI (computer, turtle, disk drive) it runs only when the sender has that exact tile's
+container open and still usable, which is the only way a stock client sends these. Monitors,
+printers and modems only reply with their own state to a refresh request, so they are left alone.
+
+**Verified** with two computers. Driving computer A was refused for a player with no GUI open and
+for a player with computer B's GUI open, and allowed only for a player with A's own GUI open.
+
+</details>
+
 ---
 
 ## immibis-core 52.4.6 (Tubestuff)
@@ -489,6 +510,9 @@ click on the slot holding the open bag. Neither is needed while the bag is open.
 | Mining Laser damage | Beams still hurt and set fire to players and mobs anywhere. A PvP matter, not a claim bypass. |
 | Turtles placing vanilla blocks | MCPC+ asks plugins as the player "ComputerCraft" when a turtle places a vanilla block, so an owner's turtle may be refused in their own claim. Not checked. |
 | Pipes, tubes and AE buses reading a chest just inside a claim from outside | A border problem for anything that moves items. No fix. |
+| ComputerCraft command block peripheral | Off by config (`enableCommandBlock=false`). If enabled, a computer wired to a command block runs op level server commands. Leave it off. |
+| ComputerCraft `http` API reaching localhost or the LAN | `http.request` has no host filter in 1.5, so a computer can read the server's own admin pages (dynmap, panels) or LAN devices. Config: set `enableAPI_http=false`, or a host filter could block loopback and private ranges. |
+| OpenCCSensors reading nearby players | A sensor reports a player's inventory, armour and position through walls within its tier's radius. Range bounded and inherent to the mod. Server policy. |
 | Balance and lag bans: Nuke, Industrial TNT, alarms, Crystal Chest, chunk loaders | Server policy rather than bugs. Left to config and plugins. |
 | NEI magnet mode | `NEIServer.cfg` gives `magnet` to `ALL`. Magnet pulls dropped items from 16 blocks away through walls, so it can take items off the floor inside a claim. Config: remove `ALL`. |
 | CodeChickenCore 0.7.3, PowerCrystalsCore 1.0.3 | Scanned. Libraries with no player driven world changes. Nothing to fix. |
@@ -545,8 +569,8 @@ apply, so it never writes a jar that silently did nothing.
 server with stock or patched jars, runs the scenarios from the console and prints the results:
 
 ```sh
-test/run.sh stock   probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle
-test/run.sh patched probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle
+test/run.sh stock   probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle ccpacket
+test/run.sh patched probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle ccpacket
 ```
 
 The protection scenarios claim an area for `Owner` with stock GriefPrevention and act as the
