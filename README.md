@@ -26,6 +26,7 @@ Each patch is selectable individually.
 | [IC2NuclearControl 1.4.6](#ic2nuclearcontrol-146) | `packets` |
 | [OmniTools 3.0.4](#omnitools-304) | `wrench` |
 | [Balkon's Weaponmod](#balkons-weaponmod) | `dynamite` |
+| [WR-CBE Wireless Redstone 1.3.2.8](#wr-cbe-wireless-redstone-1328) | `freq` |
 
 Bukkit plugins have [their own section](#plugins). The fixes that used to live in plugins are
 now done inside the mods, so they hold no matter which protection plugin the server runs.
@@ -672,6 +673,28 @@ checks it against the player who threw the dynamite, the same as a hand break. D
 player behind it is treated as untrusted and breaks nothing in a claim.
 
 **Verified** on the test server: the removal is routed through the guard and the mod loads.
+
+</details>
+
+---
+
+## WR-CBE Wireless Redstone 1.3.2.8
+
+<details>
+<summary><b><code>freq</code>: seize private frequencies and retune anyone's wireless tiles</b></summary>
+
+**The bug.** The server packet handler accepted two packets a client should never send:
+
+- packet 9 reassigned any frequency's owner to any name, so a player could take over another
+  player's private frequency (and the redstone it drives).
+- packet 1 retuned any wireless tile at attacker-chosen coordinates, checked only against the
+  frequency, not the tile, so a receiver inside a claim could be retuned from across the map.
+
+**The patch.** Packet 9 is dropped (it is only ever a server-to-client broadcast). The packet-1
+tile lookup goes through `TLiteWR.gateTile`, which returns the tile only when the sender is
+within reach, so a player can only retune tiles next to them.
+
+**Verified** on the test server: both sites are routed through the guards and the mod loads.
 
 </details>
 

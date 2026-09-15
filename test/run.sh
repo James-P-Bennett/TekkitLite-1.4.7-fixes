@@ -31,6 +31,7 @@ JARS=(
   "IC2NuclearControl-1.4.6.zip|IC2NuclearControl-1.4.6-patched.zip"
   "OmniTools-3.0.4.zip|OmniTools-3.0.4-patched.zip"
   "Weaponmod.zip|Weaponmod-patched.zip"
+  "WR-CBE Core 1.3.2.8.jar|WR-CBE Core 1.3.2.8-patched.jar"
   "ComputerCraft1.5.zip|ComputerCraft1.5-patched.zip"
 )
 
