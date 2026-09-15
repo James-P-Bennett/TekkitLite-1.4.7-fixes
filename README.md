@@ -21,6 +21,8 @@ Each patch is selectable individually.
 | [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` |
 | [ThermalExpansion 2.2.2.2](#thermalexpansion-2222) | `packets` |
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
+| [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` |
+| [AdditionalPipes 2.1.3](#additionalpipes-213) | `teleowner` |
 
 Bukkit plugins have [their own section](#plugins). The fixes that used to live in plugins are
 now done inside the mods, so they hold no matter which protection plugin the server runs.
@@ -551,6 +553,44 @@ crystal chests render items, so no other chest is affected, and nothing about st
 
 ---
 
+## LogisticsPipes 0.7.0.96
+
+<details>
+<summary><b><code>diskdupe</code>: Request Pipe Mk2 disk packet spawns arbitrary items</b></summary>
+
+**The bug.** The disk-change packet stored a fully client-controlled ItemStack as a Request Pipe
+Mk2's disk, and the disk-drop packet then spawned that exact stack into the world. A client sent
+64 diamond blocks as the disk, dropped it, and repeated: unlimited item creation.
+
+**The patch.** The store goes through `TLiteLP.setDisk`, which accepts only a real disk item (or
+clearing it), so the drop can only ever drop a disk.
+
+**Verified** in the patched jar: the store call is routed through the guard.
+
+</details>
+
+---
+
+## AdditionalPipes 2.1.3
+
+<details>
+<summary><b><code>teleowner</code>: seize a teleport pipe's owner to steal another player's items</b></summary>
+
+**The bug.** Packet id 16 set a teleport pipe's owner field to any client string on any teleport
+pipe, with no check. An attacker set their own receiving pipe's owner to a victim's name and a
+matching frequency, and the victim's sending pipe then teleported its items, energy and liquid
+to the attacker, across claims and dimensions.
+
+**The patch.** The client owner-write is dropped; the owner is only ever set server-side when the
+pipe is placed. The legitimate frequency packet (id 64) already checks the player, so it is left
+alone.
+
+**Verified** in the patched jar: the owner write is removed from the packet handler.
+
+</details>
+
+---
+
 ## Not fixed yet
 
 | What | Status |
@@ -559,6 +599,8 @@ crystal chests render items, so no other chest is affected, and nothing about st
 | Mining Laser damage | Beams still hurt and set fire to players and mobs anywhere. A PvP matter, not a claim bypass. |
 | Turtles placing vanilla blocks | MCPC+ asks plugins as the player "ComputerCraft" when a turtle places a vanilla block, so an owner's turtle may be refused in their own claim. Not checked. |
 | Pipes, tubes and AE buses reading a chest just inside a claim from outside | A border problem for anything that moves items. No fix. |
+| LogisticsPipes Security Station takeover | Packets rewrite any station's settings with no owner check. Needs LP's own owner model worked out to gate safely without locking players out. Deferred. |
+| LogisticsPipes request amount | A request packet's quantity is an unvalidated int; a huge value could drive the crafting tree as a DoS. Clamp needed. Deferred. |
 | ComputerCraft command block peripheral | Off by config (`enableCommandBlock=false`). If enabled, a computer wired to a command block runs op level server commands. Leave it off. |
 | Tubestuff Black Hole Chest | Off by config (`enableBlackHoleChest=false`). If enabled, its unbounded inventory writes to NBT and the same chunk save loss as the Harvester flood applies. Leave it off. |
 | Tampered on-disk NBT crashing one chunk/tile load (Factorization slots, ACT Mk II recipe, immibis chunk loader shape, Mystcraft legacy biome) | Only reachable if the region file is already edited or corrupt, not by a player in game. Left as defensive hardening, not applied. |
