@@ -1,0 +1,12 @@
+name: TLFixTest
+main: TLFixTest
+version: 1.0
+description: Scenario runner for TekkitLite-1.4.7-fixes. Test servers only.
+commands:
+  tlfix:
+    description: Run a fix scenario.
+    usage: /tlfix <scenario>
+    permission: tlfixtest.run
+permissions:
+  tlfixtest.run:
+    default: op

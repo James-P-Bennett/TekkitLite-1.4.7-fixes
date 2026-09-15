@@ -1,0 +1,48 @@
+GriefPrevention	BlockEventHandler	1572:87cbffbc 1635:8e76c55a 1636:21792f0b 1638:c95c65e3 1639:96411d73 1640:31c10f91 1641:eee53a6d 1642:3b207004 1774:cc74155a 1817:c52175cd 1818:cf7ebb9e 1819:4156effb 1820:9bf5cfaf 1821:f3b86b02 1822:59fcb3bf 1823:6a025baa 2089:b2c66f5b 2091:1a57e565 2092:7a39b041
+GriefPrevention	BlockSnapshot	1625:bbace586
+GriefPrevention	Claim	1590:6bcfdebb
+GriefPrevention	CleanupUnusedClaimsTask	1574:53e271a7
+GriefPrevention	CreateClaimResult	1606:10c1f3e6
+GriefPrevention	CustomizableMessage	1599:52bc129c
+GriefPrevention	DatabaseDataStore	1582:a5ddd499
+GriefPrevention	DeliverClaimBlocksTask	1575:530ac846
+GriefPrevention	EntityCleanupTask	1577:48beab21
+GriefPrevention	EntityEventHandler	1578:293a0d77
+GriefPrevention	EquipShovelProcessingTask	1583:c20a261b
+GriefPrevention	FlatFileDataStore	1573:88b1d160
+GriefPrevention	GriefPrevention	1591:dbdf2e46
+GriefPrevention	IpBanInfo	1624:ce55d976
+GriefPrevention	MaterialCollection	1622:ba32a3bf
+GriefPrevention	MaterialInfo	1623:35c0e06e
+GriefPrevention	Messages	1602:189fcb2e 1745:5dd8a5a1 1746:e8140752 1747:d700eb5c 1748:a450c544 1763:a099c13e 1770:48370e34
+GriefPrevention	PlayerData	1600:fd7329a3
+GriefPrevention	PlayerEventHandler	1576:a2977042 1643:ba65bd97 1645:12fa4310 1646:f95c439e 1647:f5c9455d 1648:8f1c8e98 1649:503ead9a 1666:8139a2cc 1667:100bddab 1668:23195e37 1727:58f25705 1729:cffe846a 1730:5b409c2b 1731:f96a5cae 1732:6b63d1fd 1736:9afe7b19 1738:e01abe1a 1739:9e760019 1740:e453abb9 1741:5b87f93d 1742:815847fe 1743:1130ca94 1744:72e8501f 1772:5b4e503e 2692:cec30cc3 2694:b657d209 2695:8df24867 2734:edd03e05 2735:9e1be74e 2736:f4c030a6 2738:a01bab94 2741:0c4209a3 2742:04e47ca1 2743:8b78fa9a 2745:319bd744 2747:f3335264 2748:14d7ab60 2749:2f55e7ac 2750:99b841c9 2753:c82fcba8 2754:e700b34d 2755:9fbf311d 2756:c3cf208c 2757:477c9dac 2758:d1add587 2759:cca742a4
+GriefPrevention	PlayerKickBanTask	1579:b0184eec
+GriefPrevention	PlayerRescueTask	1592:7ecbad09
+GriefPrevention	RestoreNatureExecutionTask	1581:9d88f227
+GriefPrevention	RestoreNatureProcessingTask	1580:25f5b030
+GriefPrevention	SecureClaimTask	1593:503ce837
+GriefPrevention	SendPlayerMessageTask	1584:18bedabe
+GriefPrevention	ShovelMode	1629:d54081c2
+GriefPrevention	SiegeCheckupTask	1597:9dc4019a
+GriefPrevention	SiegeData	1619:b9740b18
+GriefPrevention	TextMode	1601:5651234e
+GriefPrevention	TreeCleanupTask	1598:cdc79196
+GriefPrevention	Visualization	1604:8e3adbbb
+GriefPrevention	VisualizationApplicationTask	1588:d71812a9
+GriefPrevention	VisualizationType	1605:582cb494
+GriefPrevention	ClaimPermission	1620:930871b6
+GriefPrevention	DataStore	1603:ca42a3c4 1764:33108954 1766:b93f6579 1767:8ecc9be3 1768:f4a8a31c 1769:aa72303d 1771:9da171fc
+TekkitCustomizer	ActionType	2774:5602350b
+TekkitCustomizer	AdjacentBlockDupePatch	2842:225d08aa 2843:1852f7ba 2850:215cbeda 2855:8c06281b 2857:c3b21b14 2861:6c4414ed 2863:3ce527a1 2866:ef3b8c36 2867:353939ad 2869:02f9944e 2870:71c2c628 2873:29f28a48 2874:5d320771 2875:464bb3ed 2876:00e01715
+TekkitCustomizer	AdjacentBlockEventHandler	2797:d29e8385 2798:57eccddc 2799:eaa96919 2810:916775c8 2811:82aaca4e 2812:f7c3a744 2820:c6b5cd53 2821:b0890233 2824:99bae96d
+TekkitCustomizer	AdjacentBlockEvents	2833:7626b589 2834:58d88826 2839:3d20a781 2841:004a1323
+TekkitCustomizer	BlockEventHandler	2766:55cb53f6
+TekkitCustomizer	BlockPlaceListener	2845:7d4a5e0a 2846:d6093611 2847:030a77a1
+TekkitCustomizer	ContrabandScannerTask	2767:b06f69d1
+TekkitCustomizer	EntityEventHandler	2771:d2e008f2
+TekkitCustomizer	InHandContrabandScanTask	2769:e61e7263
+TekkitCustomizer	MaterialCollection	2773:cdaf5bf7
+TekkitCustomizer	MaterialInfo	2772:2d0a1bd5 2836:d11cfddb
+TekkitCustomizer	PlayerEventHandler	2768:9f8e0af4
+TekkitCustomizer	TekkitCustomizer	2770:b095fa18 2805:79aeed38 2806:9fd47412 2813:2b097475 2814:ead4d51b 2819:cbc5c1d3 2822:53b7543b 2823:eadd4371 2826:b5120978 2827:fe9d687e 2828:5b489ebd 2830:ef6bf669 2831:eb0d7b43 2832:8123eab1 2838:56fb0cdd 2848:45d15d18
