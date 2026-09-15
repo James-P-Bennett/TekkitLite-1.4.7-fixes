@@ -1,11 +1,13 @@
+import powercrystals.minefactoryreloaded.processing.TileEntityDeepStorageUnit;
 import powercrystals.minefactoryreloaded.processing.TileEntityUnifier;
 
 /**
  * Exploit fixes injected by TekkitLite-1.4.7-fixes into MineFactoryReloaded 2.3.2 (PatchMFR).
  *
  * Compiled against the server's mcpcplus.jar, so vanilla classes are used by their obfuscated
- * 1.4.7 names: ur = ItemStack, and on an IInventory a(int) = getStackInSlot,
- * a(int, ur) = setInventorySlotContents, c() = getInventoryStackLimit.
+ * 1.4.7 names: ur = ItemStack, yc = World, any = TileEntity, and on an IInventory
+ * a(int) = getStackInSlot, a(int, ur) = setInventorySlotContents, c() = getInventoryStackLimit;
+ * yc.q = getBlockTileEntity, yc.r = removeBlockTileEntity, any.k/l/m/n = worldObj/x/y/z.
  */
 public class TLiteMFR {
 
@@ -60,5 +62,32 @@ public class TLiteMFR {
 
         input.a -= amount;
         unifier.a(0, input.a <= 0 ? null : input);
+    }
+
+    /**
+     * Called first in TileEntityDeepStorageUnit.isUseableByPlayer and
+     * TileEntityLiquiCrafter.isUseableByPlayer. MFR's base inventory class refuses a player when
+     * the tile is no longer the one at its position, but these two override it with a distance
+     * check only. So once a machine breaks the block, a GUI that was open on it stays open, and
+     * the dead tile's slots can still be emptied into the player's inventory.
+     */
+    public static boolean isInWorld(any te) {
+        return te != null && te.k != null && te.k.q(te.l, te.m, te.n) == te;
+    }
+
+    /**
+     * Replaces world.removeBlockTileEntity at the end of BlockFactoryMachine1.breakBlock, on the
+     * Deep Storage Unit branch. That branch drops the DSU with its count in NBT (or copies of its
+     * slots when the count is 0) and leaves the tile's slots and count as they were, so a GUI
+     * still open on it can take the output stack again. The tile is emptied before removal.
+     */
+    public static void removeBlockTileEntity(yc world, int x, int y, int z) {
+        any te = world.q(x, y, z);
+        if (te instanceof TileEntityDeepStorageUnit) {
+            TileEntityDeepStorageUnit dsu = (TileEntityDeepStorageUnit) te;
+            dsu.clearSlots();
+            dsu.setQuantity(0);
+        }
+        world.r(x, y, z);
     }
 }

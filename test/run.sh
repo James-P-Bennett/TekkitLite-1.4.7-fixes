@@ -12,6 +12,7 @@ cd "$(dirname "$0")/.."
 MODE="${1:?usage: test/run.sh <stock|patched> <scenario...>}"; shift
 [ $# -gt 0 ] || { echo "no scenarios given" >&2; exit 2; }
 STOCK="${STOCK:-/run/media/james/Intel 660p Series M.2 2280/WindowsOS/James/Documents/CCTLiteServer/mods}"
+STOCK_CORE="${STOCK_CORE:-$STOCK/../coremods}"
 SRV=build/testserver
 JAVA7="${JAVA7:-build/jdk7/bin/java}"
 
@@ -23,15 +24,27 @@ JARS=(
   "Factorization-0.7.21.jar|Factorization-0.7.21-patched.jar"
 )
 
-for pair in "${JARS[@]}"; do
-  stock="${pair%%|*}"; patched="${pair##*|}"
-  rm -f "$SRV/mods/$stock" "$SRV/mods/$patched"
-  if [ "$MODE" = patched ] && [ -f "$patched" ]; then
-    cp "$patched" "$SRV/mods/"
-  else
-    cp "$STOCK/$stock" "$SRV/mods/"
-  fi
-done
+COREJARS=(
+  "[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.CoreMod.jar|[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.CoreMod-patched.jar"
+  "NotEnoughItems 1.4.7.0.jar|NotEnoughItems 1.4.7.0-patched.jar"
+)
+
+# <folder> <stock dir> <pair...>
+swap() {
+  local dir="$1" from="$2"
+  shift 2
+  for pair in "$@"; do
+    stock="${pair%%|*}"; patched="${pair##*|}"
+    rm -f "$SRV/$dir/$stock" "$SRV/$dir/$patched"
+    if [ "$MODE" = patched ] && [ -f "$patched" ]; then
+      cp "$patched" "$SRV/$dir/"
+    else
+      cp "$from/$stock" "$SRV/$dir/"
+    fi
+  done
+}
+swap mods "$STOCK" "${JARS[@]}"
+swap coremods "$STOCK_CORE" "${COREJARS[@]}"
 cp build/TLFixTest.jar "$SRV/plugins/"
 
 cd "$SRV"
