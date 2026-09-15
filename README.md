@@ -25,6 +25,7 @@ Each patch is selectable individually.
 | [AdditionalPipes 2.1.3](#additionalpipes-213) | `teleowner` |
 | [IC2NuclearControl 1.4.6](#ic2nuclearcontrol-146) | `packets` |
 | [OmniTools 3.0.4](#omnitools-304) | `wrench` |
+| [Balkon's Weaponmod](#balkons-weaponmod) | `dynamite` |
 
 Bukkit plugins have [their own section](#plugins). The fixes that used to live in plugins are
 now done inside the mods, so they hold no matter which protection plugin the server runs.
@@ -650,6 +651,27 @@ player, the same as a hand break, and does nothing when refused. The player is o
 uses their real build permission: their own claim is fine, someone else's is refused.
 
 **Verified** on the test server: the guard is injected and OmniTools loads.
+
+</details>
+
+---
+
+## Balkon's Weaponmod
+
+<details>
+<summary><b><code>dynamite</code>: dynamite blasts blocks inside claims (protection)</b></summary>
+
+**The bug.** Dynamite (and the cannon) explode through the mod's own `AdvancedExplosion`, which
+removes blocks with `world.setBlockWithNotify` instead of a vanilla explosion, so it never fires
+the Bukkit `EntityExplodeEvent` that GriefPrevention filters. A thrown stick of dynamite blew up
+blocks inside another player's claim, and block damage is on by default. (The cannon is banned,
+but dynamite is craftable.)
+
+**The patch.** Each block the explosion would remove goes through `TLiteWM.breakIfAllowed`, which
+checks it against the player who threw the dynamite, the same as a hand break. Dynamite with no
+player behind it is treated as untrusted and breaks nothing in a claim.
+
+**Verified** on the test server: the removal is routed through the guard and the mod loads.
 
 </details>
 

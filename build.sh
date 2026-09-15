@@ -4,7 +4,7 @@
 #   ./build.sh                 build all mods found at the default paths
 #
 # Override any path with an env var:
-#   MODS  COREMODS  MCPC  MFR_SRC  EE3_SRC  AE_SRC  FZ_SRC  IC2_SRC  IMMIBIS_SRC  RPCORE_SRC  BC_SRC  CC_SRC  TE_SRC  COFH_SRC  IRONCHEST_SRC  LP_SRC  AP_SRC  NC_SRC  OT_SRC  TC_SRC  NEI_SRC  ASM  JAVAC8
+#   MODS  COREMODS  MCPC  MFR_SRC  EE3_SRC  AE_SRC  FZ_SRC  IC2_SRC  IMMIBIS_SRC  RPCORE_SRC  BC_SRC  CC_SRC  TE_SRC  COFH_SRC  IRONCHEST_SRC  LP_SRC  AP_SRC  NC_SRC  OT_SRC  WM_SRC  TC_SRC  NEI_SRC  ASM  JAVAC8
 #
 # Helper classes are compiled against the server's mcpcplus.jar, which holds the whole
 # obfuscated 1.4.7 game plus Forge and Bukkit, and against the mod jars they call into.
@@ -32,6 +32,7 @@ LP_SRC="${LP_SRC:-$MODS/LogisticsPipes-MC1.4.7-0.7.0.96.jar}"
 AP_SRC="${AP_SRC:-$MODS/AdditionalPipes2.1.3u42-BC3.4.2-MC1.4.7.jar}"
 NC_SRC="${NC_SRC:-$MODS/IC2NuclearControl-1.4.6.zip}"
 OT_SRC="${OT_SRC:-$MODS/OmniTools-3.0.4.zip}"
+WM_SRC="${WM_SRC:-$MODS/Weaponmod.zip}"
 PCC="${PCC:-$COREMODS/PowerCrystalsCore-1.0.3-34.jar}"
 TC_SRC="${TC_SRC:-$COREMODS/[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.CoreMod.jar}"
 NEI_SRC="${NEI_SRC:-$COREMODS/NotEnoughItems 1.4.7.0.jar}"
@@ -44,7 +45,7 @@ JAVAC8="${JAVAC8:-/usr/lib/jvm/java-8-openjdk/bin/javac}"
 [ -f "$ASM" ]    || { echo "ASM not found at $ASM, set ASM=..." >&2; exit 1; }
 [ -x "$JAVAC8" ] || { echo "Java 8 javac not found at $JAVAC8, set JAVAC8=..." >&2; exit 1; }
 [ -f "$MCPC" ]   || { echo "mcpcplus.jar not found at $MCPC, copy it from the server or set MCPC=..." >&2; exit 1; }
-for j in "$MFR_SRC" "$EE3_SRC" "$AE_SRC" "$FZ_SRC" "$PCC" "$IC2_SRC" "$IMMIBIS_SRC" "$RPCORE_SRC" "$BC_SRC" "$CC_SRC" "$TE_SRC" "$COFH_SRC" "$IRONCHEST_SRC" "$LP_SRC" "$AP_SRC" "$NC_SRC" "$OT_SRC" "$TC_SRC" "$NEI_SRC" "$CCC" "$BSPKRS"; do
+for j in "$MFR_SRC" "$EE3_SRC" "$AE_SRC" "$FZ_SRC" "$PCC" "$IC2_SRC" "$IMMIBIS_SRC" "$RPCORE_SRC" "$BC_SRC" "$CC_SRC" "$TE_SRC" "$COFH_SRC" "$IRONCHEST_SRC" "$LP_SRC" "$AP_SRC" "$NC_SRC" "$OT_SRC" "$WM_SRC" "$TC_SRC" "$NEI_SRC" "$CCC" "$BSPKRS"; do
   [ -f "$j" ] || { echo "not found: $j" >&2; exit 1; }
 done
 
@@ -56,12 +57,12 @@ mkdir -p build/cls build/tool
 # kills the script with no explanation.
 "$JAVAC8" -nowarn -source 1.6 -target 1.6 \
   -bootclasspath "$(dirname "$JAVAC8")/../jre/lib/rt.jar" \
-  -cp "$MCPC:$MFR_SRC:$PCC:$EE3_SRC:$IC2_SRC:$IMMIBIS_SRC:$RPCORE_SRC:$BC_SRC:$CC_SRC:$TE_SRC:$COFH_SRC:$LP_SRC:$TC_SRC:$BSPKRS:$NEI_SRC:$CCC" -d build/cls \
-  src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java src/TLiteImmibis.java src/TLiteBC.java src/TLiteTurtle.java src/TLiteCC.java src/TLiteTE.java src/TLiteIronChest.java src/TLiteLP.java src/TLiteNC.java 2>&1 \
+  -cp "$MCPC:$MFR_SRC:$PCC:$EE3_SRC:$IC2_SRC:$IMMIBIS_SRC:$RPCORE_SRC:$BC_SRC:$CC_SRC:$TE_SRC:$COFH_SRC:$LP_SRC:$WM_SRC:$TC_SRC:$BSPKRS:$NEI_SRC:$CCC" -d build/cls \
+  src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java src/TLiteImmibis.java src/TLiteBC.java src/TLiteTurtle.java src/TLiteCC.java src/TLiteTE.java src/TLiteIronChest.java src/TLiteLP.java src/TLiteNC.java src/TLiteWM.java 2>&1 \
   | grep -vE 'bootstrap class path|source value 1\.6|target value 1\.6|options|unchecked' || true
 
 for f in build/cls/TLiteProtect.class build/cls/TLiteMFR.class build/cls/TLiteEE3.class \
-         build/cls/TLiteTreeCap.class build/cls/TLiteNEI.class build/cls/TLiteImmibis.class build/cls/TLiteBC.class build/cls/TLiteTurtle.class build/cls/TLiteCC.class build/cls/TLiteTE.class build/cls/TLiteIronChest.class build/cls/TLiteLP.class build/cls/TLiteNC.class; do
+         build/cls/TLiteTreeCap.class build/cls/TLiteNEI.class build/cls/TLiteImmibis.class build/cls/TLiteBC.class build/cls/TLiteTurtle.class build/cls/TLiteCC.class build/cls/TLiteTE.class build/cls/TLiteIronChest.class build/cls/TLiteLP.class build/cls/TLiteNC.class build/cls/TLiteWM.class; do
   [ -f "$f" ] || { echo "helper class missing after compile: $f" >&2; exit 1; }
 done
 
@@ -123,6 +124,10 @@ patch_one "IC2NuclearControl" "$NC_SRC" "IC2NuclearControl-1.4.6-patched.zip" \
 patch_one "OmniTools" "$OT_SRC" "OmniTools-3.0.4-patched.zip" \
           PatchOmniTools.java "wrench" \
           build/cls/TLiteProtect.class
+
+patch_one "Weaponmod" "$WM_SRC" "Weaponmod-patched.zip" \
+          PatchWM.java "dynamite" \
+          build/cls/TLiteWM.class build/cls/TLiteProtect.class
 
 # Coremods. Server side like the rest: they go in the server's coremods/ folder.
 patch_one "TreeCapitator" "$TC_SRC" "[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.CoreMod-patched.jar" \
