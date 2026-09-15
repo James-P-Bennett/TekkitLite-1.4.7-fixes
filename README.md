@@ -18,7 +18,7 @@ Each patch is selectable individually.
 | [BuildCraft 3.4.3](#buildcraft-343) | `quarry` · `filler` · `quarrychunks` |
 | [ComputerCraft 1.5](#computercraft-15) | `turtle` · `packets` |
 | [immibis-core 52.4.6](#immibis-core-5246-tubestuff) (Tubestuff) | `mergenbt` |
-| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` · `tubeinject` · `breaker` · `igniter` |
+| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` |
 | [ThermalExpansion 2.2.2.2](#thermalexpansion-2222) | `packets` |
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
 | [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` |
@@ -534,20 +534,21 @@ and RedPower loads normally.
 </details>
 
 <details>
-<summary><b><code>breaker</code> and <code>igniter</code>: RedPower Block Breaker and Igniter act inside claims (protection)</b></summary>
+<summary><b><code>breaker</code>, <code>igniter</code>, <code>deployer</code>: RedPower machines act inside claims (protection)</b></summary>
 
-**The bug.** The Block Breaker breaks the block in front of it, and the Igniter lights fire
-against the block in front, both straight through the world with no protection check. A machine
-placed just outside a claim, facing in, mines or burns the claim. Neither records an owner.
+**The bug.** The Block Breaker breaks the block in front, the Igniter lights fire against it, and
+the Deployer uses the held item on it, all straight through the world with no protection check.
+A machine placed just outside a claim, facing in, mines, burns or builds into the claim.
 
-**The patch.** The Block Breaker's break and the Igniter's fire-set go through a
-[`TLiteProtect`](#how-protection-checks-work) check as an offline fake player named `[RedPower]`,
-a name no claim trusts, so both are refused inside every claim and work on open ground. Removing
-stray fire is left alone. Both are patched at load by the coremod (they are in the signed
-RedPower jars).
+**The patch.** Each machine records the player who placed it (saved to its NBT, hooked into
+`TileMachine`), and the break, fire-set and deploy go through a
+[`TLiteProtect`](#how-protection-checks-work) check as that owner: the owner's machine works in
+the owner's claim and is refused in others'. A machine placed before this patch has no owner and
+is checked as `[RedPower]`, a name no claim trusts, so it works only on open ground. Removing
+stray fire is left alone. All are patched at load by the coremod (the RedPower jars are signed).
 
-**Verified** on the test server: the coremod logs `patched ...TileBreaker` and `...TileIgniter`
-and RedPower loads normally.
+**Verified** on the test server: the coremod logs `patched ...TileMachine`, `...TileDeployBase`,
+`...TileBreaker` and `...TileIgniter` and RedPower loads normally.
 
 </details>
 

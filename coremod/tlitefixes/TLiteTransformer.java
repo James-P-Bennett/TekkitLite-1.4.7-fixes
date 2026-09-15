@@ -53,6 +53,8 @@ public class TLiteTransformer implements IClassTransformer {
     static final String COREPROXY = "com/eloraam/redpower/core/CoreProxy";
     static final String BREAKER = "com/eloraam/redpower/machine/TileBreaker";
     static final String IGNITER = "com/eloraam/redpower/machine/TileIgniter";
+    static final String TILEMACHINE = "com/eloraam/redpower/machine/TileMachine";
+    static final String DEPLOYER = "com/eloraam/redpower/machine/TileDeployBase";
 
     public byte[] transform(String name, byte[] bytes) {
         if (name == null || bytes == null) {
@@ -60,7 +62,8 @@ public class TLiteTransformer implements IClassTransformer {
         }
         String internal = name.replace('.', '/');
         if (!internal.equals(LASER) && !internal.equals(EXPLOSION) && !internal.equals(BAG)
-                && !internal.equals(COREPROXY) && !internal.equals(BREAKER) && !internal.equals(IGNITER)) {
+                && !internal.equals(COREPROXY) && !internal.equals(BREAKER) && !internal.equals(IGNITER)
+                && !internal.equals(TILEMACHINE) && !internal.equals(DEPLOYER)) {
             return bytes;
         }
         try {
@@ -86,6 +89,8 @@ public class TLiteTransformer implements IClassTransformer {
         else if (internal.equals(COREPROXY)) ok = patchCoreProxy(cn);
         else if (internal.equals(BREAKER)) ok = patchBreaker(cn);
         else if (internal.equals(IGNITER)) ok = patchIgniter(cn);
+        else if (internal.equals(TILEMACHINE)) ok = patchTileMachine(cn);
+        else if (internal.equals(DEPLOYER)) ok = patchDeployer(cn);
         else ok = patchBag(cn);
         if (!ok) {
             return null;
@@ -225,7 +230,9 @@ public class TLiteTransformer implements IClassTransformer {
                 if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
                 MethodInsnNode mi = (MethodInsnNode) i;
                 if (!mi.owner.equals("yc") || !mi.name.equals("e") || !mi.desc.equals("(IIII)Z")) continue;
-                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", "breakIfAllowed", "(Lyc;IIII)Z"));
+                m.instructions.insertBefore(mi, new VarInsnNode(Opcodes.ALOAD, 0));
+                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", "breakIfAllowed", "(Lyc;IIIILany;)Z"));
+                m.maxStack += 1;
                 hits++;
             }
         }
@@ -250,9 +257,87 @@ public class TLiteTransformer implements IClassTransformer {
                 while (prev != null && (prev.getType() == AbstractInsnNode.LABEL || prev.getType() == AbstractInsnNode.LINE
                         || prev.getType() == AbstractInsnNode.FRAME)) prev = prev.getPrevious();
                 if (prev != null && prev.getOpcode() == Opcodes.ICONST_0) continue;   // fire removal, leave it
-                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", "igniteIfAllowed", "(Lyc;IIII)Z"));
+                m.instructions.insertBefore(mi, new VarInsnNode(Opcodes.ALOAD, 0));
+                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", "igniteIfAllowed", "(Lyc;IIIILany;)Z"));
+                m.maxStack += 1;
                 hits++;
             }
+        }
+        return hits == 1;
+    }
+
+    /**
+     * TileMachine is the base for the Breaker, Igniter and Deployer. It records the placing
+     * player (onBlockPlaced) and persists the owner in NBT (read a / write b), so the guards can
+     * check each machine as its owner.
+     */
+    static boolean patchTileMachine(ClassNode cn) {
+        int placed = 0, read = 0, write = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (m.name.equals("onBlockPlaced") && m.desc.equals("(Lur;ILmd;)V")) {
+                InsnList c = new InsnList();
+                c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                c.add(new VarInsnNode(Opcodes.ALOAD, 3));
+                c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", "recordOwner", "(Lany;Lmd;)V"));
+                beforeReturns(m, c);
+                m.maxStack = Math.max(m.maxStack, 2);
+                placed++;
+            } else if (m.name.equals("a") && m.desc.equals("(Lbq;)V")) {
+                beforeReturns(m, nbtCall("loadOwner"));
+                m.maxStack = Math.max(m.maxStack, 2);
+                read++;
+            } else if (m.name.equals("b") && m.desc.equals("(Lbq;)V")) {
+                beforeReturns(m, nbtCall("saveOwner"));
+                m.maxStack = Math.max(m.maxStack, 2);
+                write++;
+            }
+        }
+        return placed == 1 && read == 1 && write == 1;
+    }
+
+    static InsnList nbtCall(String name) {
+        InsnList c = new InsnList();
+        c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        c.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", name, "(Lany;Lbq;)V"));
+        return c;
+    }
+
+    static void beforeReturns(MethodNode m, InsnList call) {
+        for (AbstractInsnNode i : m.instructions.toArray()) {
+            if (i.getOpcode() != Opcodes.RETURN) continue;
+            InsnList copy = new InsnList();
+            for (AbstractInsnNode c = call.getFirst(); c != null; c = c.getNext()) copy.add(c.clone(null));
+            m.instructions.insertBefore(i, copy);
+        }
+    }
+
+    /**
+     * The Deployer uses the held item on the block in front (tryUseItemStack, coords in locals
+     * 2/3/4). It is guarded at the top against the machine's owner; a refused deploy returns false.
+     */
+    static boolean patchDeployer(ClassNode cn) {
+        int hits = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("tryUseItemStack")) continue;
+            InsnList g = new InsnList();
+            LabelNode allowed = new LabelNode();
+            g.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            g.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            g.add(new FieldInsnNode(Opcodes.GETFIELD, "any", "k", "Lyc;"));
+            g.add(new VarInsnNode(Opcodes.ILOAD, 2));
+            g.add(new VarInsnNode(Opcodes.ILOAD, 3));
+            g.add(new VarInsnNode(Opcodes.ILOAD, 4));
+            g.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", "deployAllowed", "(Lany;Lyc;III)Z"));
+            g.add(new JumpInsnNode(Opcodes.IFNE, allowed));
+            g.add(new InsnNode(Opcodes.ICONST_0));
+            g.add(new InsnNode(Opcodes.IRETURN));
+            g.add(allowed);
+            m.instructions.insert(g);
+            m.maxStack = Math.max(m.maxStack, 5);
+            hits++;
         }
         return hits == 1;
     }
@@ -266,7 +351,7 @@ public class TLiteTransformer implements IClassTransformer {
             System.err.println("usage: TLiteTransformer <ic2.jar> <RedPowerCore.zip> <RedPowerMechanical.zip>");
             System.exit(2);
         }
-        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER } };
+        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER } };
         boolean failed = false;
         for (String[] check : checks) {
             ZipFile zf = new ZipFile(check[0]);
