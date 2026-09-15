@@ -55,6 +55,8 @@ public class TLiteTransformer implements IClassTransformer {
     static final String IGNITER = "com/eloraam/redpower/machine/TileIgniter";
     static final String TILEMACHINE = "com/eloraam/redpower/machine/TileMachine";
     static final String DEPLOYER = "com/eloraam/redpower/machine/TileDeployBase";
+    static final String NETMGR = "ic2/core/network/NetworkManager";
+    static final String NETLISTENER = "ic2/api/network/INetworkClientTileEntityEventListener";
 
     public byte[] transform(String name, byte[] bytes) {
         if (name == null || bytes == null) {
@@ -63,7 +65,7 @@ public class TLiteTransformer implements IClassTransformer {
         String internal = name.replace('.', '/');
         if (!internal.equals(LASER) && !internal.equals(EXPLOSION) && !internal.equals(BAG)
                 && !internal.equals(COREPROXY) && !internal.equals(BREAKER) && !internal.equals(IGNITER)
-                && !internal.equals(TILEMACHINE) && !internal.equals(DEPLOYER)) {
+                && !internal.equals(TILEMACHINE) && !internal.equals(DEPLOYER) && !internal.equals(NETMGR)) {
             return bytes;
         }
         try {
@@ -91,6 +93,7 @@ public class TLiteTransformer implements IClassTransformer {
         else if (internal.equals(IGNITER)) ok = patchIgniter(cn);
         else if (internal.equals(TILEMACHINE)) ok = patchTileMachine(cn);
         else if (internal.equals(DEPLOYER)) ok = patchDeployer(cn);
+        else if (internal.equals(NETMGR)) ok = patchNetworkManager(cn);
         else ok = patchBag(cn);
         if (!ok) {
             return null;
@@ -343,6 +346,28 @@ public class TLiteTransformer implements IClassTransformer {
     }
 
     /**
+     * NetworkManager.onPacketData case 3 dispatched a tile network event looked up across every
+     * dimension from client coordinates. The dispatch is routed through a gate that runs it only
+     * for a tile in the sender's own world within reach.
+     */
+    static boolean patchNetworkManager(ClassNode cn) {
+        int hits = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("onPacketData")) continue;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.INVOKEINTERFACE) continue;
+                MethodInsnNode mi = (MethodInsnNode) i;
+                if (!mi.owner.equals(NETLISTENER) || !mi.name.equals("onNetworkEvent") || !mi.desc.equals("(Lqx;I)V")) continue;
+                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", "netEvent",
+                        "(L" + NETLISTENER + ";Lqx;I)V"));
+                hits++;
+            }
+        }
+        return hits == 1;
+    }
+
+    /**
      * Build check: TLiteTransformer <ic2.jar> <RedPowerCore.zip> <RedPowerMechanical.zip>. Patches
      * the classes from the stock jars and exits non zero unless every one applies.
      */
@@ -351,7 +376,7 @@ public class TLiteTransformer implements IClassTransformer {
             System.err.println("usage: TLiteTransformer <ic2.jar> <RedPowerCore.zip> <RedPowerMechanical.zip>");
             System.exit(2);
         }
-        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER } };
+        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER }, { args[0], NETMGR } };
         boolean failed = false;
         for (String[] check : checks) {
             ZipFile zf = new ZipFile(check[0]);

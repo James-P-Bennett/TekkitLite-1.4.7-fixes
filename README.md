@@ -18,7 +18,7 @@ Each patch is selectable individually.
 | [BuildCraft 3.4.3](#buildcraft-343) | `quarry` · `filler` · `quarrychunks` |
 | [ComputerCraft 1.5](#computercraft-15) | `turtle` · `packets` |
 | [immibis-core 52.4.6](#immibis-core-5246-tubestuff) (Tubestuff) | `mergenbt` |
-| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` |
+| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` · `netevent` |
 | [ThermalExpansion 2.2.2.2](#thermalexpansion-2222) | `packets` |
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
 | [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` |
@@ -553,6 +553,21 @@ stray fire is left alone. All are patched at load by the coremod (the RedPower j
 
 </details>
 
+<details>
+<summary><b><code>netevent</code>: cycle any energy storage block's redstone mode or claim an Energy-O-Mat from anywhere</b></summary>
+
+**The bug.** `NetworkManager.onPacketData` (packet 3) looked up the target tile across every
+dimension from client coordinates and called its `onNetworkEvent` with no reach or dimension
+check. Any player could cycle any BatBox/CESU/MFE/MFSU's redstone-output mode, or claim an
+unopened Energy-O-Mat, from anywhere on the server and in any dimension.
+
+**The patch.** The dispatch goes through `TLiteIC2.netEvent`, which runs the event only when the
+tile is in the sender's own world and within reach. Patched at load by the coremod (IC2 is signed).
+
+**Verified** on the test server: the coremod logs `patched ic2.core.network.NetworkManager` and IC2 loads.
+
+</details>
+
 ---
 
 ## ThermalExpansion 2.2.2.2
@@ -751,6 +766,8 @@ only on open ground.
 | Mining Laser damage | Beams still hurt and set fire to players and mobs anywhere. A PvP matter, not a claim bypass. |
 | Turtles placing vanilla blocks | MCPC+ asks plugins as the player "ComputerCraft" when a turtle places a vanilla block, so an owner's turtle may be refused in their own claim. Not checked. |
 | Pipes, tubes and AE buses reading a chest just inside a claim from outside | A border problem for anything that moves items. No fix. |
+| IC2 Terraformer changing terrain in claims | A placed Terraformer edits blocks in a radius with no owner; like MFFS it would need owner-tracking that its code does not make available cleanly. Recommend a ban or server-policy decision. |
+| MFFS force fields (adv-repulsion) projected into claims | Field blocks reference their projector only by an integer id, and projectors carry no owner, so owner-tracking (as used for the other machines) is impractical without reverse-engineering the projector registry; an ownerless guard would also break force fields around a player's own claimed base. Recommend banning the projectors, or a server-policy decision. |
 | LogisticsPipes Security Station takeover | Packets rewrite any station's settings with no owner check. Needs LP's own owner model worked out to gate safely without locking players out. Deferred. |
 | LogisticsPipes request amount | A request packet's quantity is an unvalidated int; a huge value could drive the crafting tree as a DoS. Clamp needed. Deferred. |
 | ComputerCraft command block peripheral | Off by config (`enableCommandBlock=false`). If enabled, a computer wired to a command block runs op level server commands. Leave it off. |

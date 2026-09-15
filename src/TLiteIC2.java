@@ -89,4 +89,20 @@ public class TLiteIC2 {
         TLiteProtect.refused(player, what + " at " + x + "," + y + "," + z + " (protected)");
         return false;
     }
+
+    /**
+     * Replaces INetworkClientTileEntityEventListener.onNetworkEvent in NetworkManager's packet
+     * handler (case 3). Stock looked up the tile across every dimension from client coordinates
+     * and dispatched with no reach or dimension check, letting a player cycle any energy storage
+     * block's redstone mode or claim an unopened Energy-O-Mat from anywhere. The event now runs
+     * only when the tile is in the sender's own world and within reach.
+     */
+    public static void netEvent(ic2.api.network.INetworkClientTileEntityEventListener listener, qx player, int event) {
+        if (listener instanceof any && player != null) {
+            any tile = (any) listener;
+            if (tile.k == player.p && player.e(tile.l + 0.5, tile.m + 0.5, tile.n + 0.5) <= 64.0) {
+                listener.onNetworkEvent(player, event);
+            }
+        }
+    }
 }
