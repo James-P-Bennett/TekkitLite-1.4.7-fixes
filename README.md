@@ -27,6 +27,7 @@ Each patch is selectable individually.
 | [OmniTools 3.0.4](#omnitools-304) | `wrench` |
 | [Balkon's Weaponmod](#balkons-weaponmod) | `dynamite` |
 | [WR-CBE Wireless Redstone 1.3.2.8](#wr-cbe-wireless-redstone-1328) | `freq` |
+| [Steve's Carts 2.0.0.a62](#steves-carts-2000a62) | `carts` |
 
 Bukkit plugins have [their own section](#plugins). The fixes that used to live in plugins are
 now done inside the mods, so they hold no matter which protection plugin the server runs.
@@ -714,6 +715,29 @@ tile lookup goes through `TLiteWR.gateTile`, which returns the tile only when th
 within reach, so a player can only retune tiles next to them.
 
 **Verified** on the test server: both sites are routed through the guards and the mod loads.
+
+</details>
+
+---
+
+## Steve's Carts 2.0.0.a62
+
+<details>
+<summary><b><code>carts</code>: mining and building cart modules act inside claims (protection)</b></summary>
+
+**The bug.** The mining, remover, wood, farm, torch, railer and melter cart modules break and
+place blocks straight through the world with no protection check, so a cart running past a claim
+mines or builds into it.
+
+**The patch.** Each cart records the player who deployed it (saved to its NBT), and every module
+block change (14 sites across the module classes) goes through a
+[`TLiteProtect`](#how-protection-checks-work) check as that owner: the owner's cart works in the
+owner's claim and is refused in others'. A cart deployed before this patch, or by something other
+than a player, has no owner and is checked as `[StevesCarts]`, a name no claim trusts, so it works
+only on open ground.
+
+**Verified** on the test server: the spawn, NBT and 14 module edits are routed through the guards
+(build asserts the exact counts) and the mod loads.
 
 </details>
 

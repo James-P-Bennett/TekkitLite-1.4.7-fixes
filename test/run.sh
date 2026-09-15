@@ -32,6 +32,7 @@ JARS=(
   "OmniTools-3.0.4.zip|OmniTools-3.0.4-patched.zip"
   "Weaponmod.zip|Weaponmod-patched.zip"
   "WR-CBE Core 1.3.2.8.jar|WR-CBE Core 1.3.2.8-patched.jar"
+  "StevesCarts2.0.0.a62.zip|StevesCarts2.0.0.a62-patched.zip"
   "ComputerCraft1.5.zip|ComputerCraft1.5-patched.zip"
 )
 
