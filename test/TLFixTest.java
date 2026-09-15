@@ -35,6 +35,22 @@ import powercrystals.minefactoryreloaded.processing.TileEntityUnifier;
 
 import com.eloraam.redpower.machine.TileBreaker;
 
+import ic2.core.item.tool.EntityMiningLaser;
+
+import immibis.tubestuff.ContainerAutoCraftingMk2;
+import immibis.tubestuff.TileAutoCraftingMk2;
+
+import com.eloraam.redpower.base.ContainerBag;
+import com.eloraam.redpower.base.ItemBag;
+
+import buildcraft.api.filler.FillerManager;
+import buildcraft.api.filler.IFillerPattern;
+import buildcraft.builders.FillerRemover;
+import buildcraft.builders.TileFiller;
+import buildcraft.factory.TileQuarry;
+
+import dan200.turtle.shared.TileEntityTurtle;
+
 /**
  * Test harness for TekkitLite-1.4.7-fixes. Runs a scenario against the live server's world
  * and prints what the stock or patched mod did, so a result can be compared between jars.
@@ -50,6 +66,14 @@ import com.eloraam.redpower.machine.TileBreaker;
  *   tlfix spawner    NEI spawner packet: claim, open ground, out of reach, bad mob name
  *   tlfix creative   NEI creative toggle packet from a player without the permission
  *   tlfix dsu        MFR Deep Storage Unit broken by a RedPower Block Breaker with its GUI open
+ *   tlfix mfrpacket  MFR DSU side packet from afar, without the GUI, with another GUI, and legit
+ *   tlfix laser      IC2 Mining Laser, mining and explosive modes, in a claim and on open ground
+ *   tlfix act2       Tubestuff ACT Mk II shift-click of empty DSUs onto a full one
+ *   tlfix bag        RedPower Canvas Bag number key swap onto the bag's own hotbar slot
+ *   tlfix filler     BuildCraft Filler, Clear pattern, outside a claim clearing a block inside it
+ *   tlfix quarry     BuildCraft Quarry placed outside a claim mining a block inside it
+ *   tlfix turtle     ComputerCraft mining turtle outside a claim digging and moving into it
+ *   tlfix quarrychunks  BuildCraft Quarry with a 5x5 chunk area keeping its own chunk, and the ticket callback
  *
  * The claim is owned by "Owner" and every action is done by the fake player "Intruder", who
  * has no trust in it. Default package so the obfuscated vanilla classes can be named.
@@ -62,7 +86,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -78,6 +102,14 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("spawner")) spawner(sender);
             else if (s.equals("creative")) creative(sender);
             else if (s.equals("dsu")) dsu(sender);
+            else if (s.equals("mfrpacket")) mfrpacket(sender);
+            else if (s.equals("laser")) laser(sender);
+            else if (s.equals("act2")) act2(sender);
+            else if (s.equals("bag")) bag(sender);
+            else if (s.equals("filler")) filler(sender);
+            else if (s.equals("quarry")) quarry(sender);
+            else if (s.equals("turtle")) turtle(sender);
+            else if (s.equals("quarrychunks")) quarrychunks(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -498,6 +530,379 @@ public class TLFixTest extends JavaPlugin {
         w.e(bx, y + 1, z, 0);
         w.e(bx, y, z, 0);
         w.e(x, y, z, 0);
+    }
+
+    /**
+     * MFR packet 5 toggles a Deep Storage Unit side between input and output. Side 2 starts as
+     * output, so "flipped" means the packet was applied.
+     */
+    private void mfrpacket(CommandSender sender) {
+        yc w = world();
+        int[] p = spot();
+        int x = p[0] + OPEN_OFFSET, y = p[1] + 20, z = p[2];
+        w.d(x, y, z, 3131, 3);
+        w.d(x + 3, y, z, 3131, 3);
+        TileEntityDeepStorageUnit dsu = (TileEntityDeepStorageUnit) w.q(x, y, z);
+        TileEntityDeepStorageUnit other = (TileEntityDeepStorageUnit) w.q(x + 3, y, z);
+
+        String[] labels = { "Intruder 30 blocks away, no GUI", "Intruder next to it, no GUI",
+                "Intruder next to it, another DSU's GUI open", "Owner next to it, its GUI open" };
+        String[] expect = { "stock flipped, fixed unchanged", "stock flipped, fixed unchanged",
+                "stock flipped, fixed unchanged", "stock and fixed flipped" };
+        for (int i = 0; i < 4; i++) {
+            dsu.setSideIsOutput(2, true);
+            iq pl = i == 3 ? CraftFakePlayer.get(w, "Owner", true) : intruder(w);
+            pl.b(x + (i == 0 ? 30.5 : 0.5), y + 1.0, z + 2.5);
+            pl.bL = pl.bK;
+            if (i == 2) pl.bL = new ContainerDeepStorageUnit(other, pl.bJ);
+            if (i == 3) pl.bL = new ContainerDeepStorageUnit(dsu, pl.bJ);
+            String thrown = "";
+            try {
+                di pkt = powercrystals.core.net.PacketWrapper.createPacket("MFReloaded", 5, new Object[] { x, y, z, 2 });
+                new powercrystals.minefactoryreloaded.net.ServerPacketHandler().onPacketData(null, pkt,
+                        (cpw.mods.fml.common.network.Player) (Object) pl);
+            } catch (Throwable t) {
+                thrown = ", threw " + t;
+            }
+            pl.bL = pl.bK;
+            sender.sendMessage(TAG + "mfrpacket " + labels[i] + ": " + (dsu.getIsSideOutput(2) ? "unchanged" : "flipped")
+                    + thrown + "  (" + expect[i] + ")");
+        }
+        w.e(x, y, z, 0);
+        w.e(x + 3, y, z, 0);
+    }
+
+    /**
+     * Intruder stands 2 blocks above a stone target, looking straight down, and fires a Mining
+     * Laser beam built the way the item builds it, ticked until it dies. Mining mode targets one
+     * stone block; explosive mode targets the top of a 3x3x3 stone cube.
+     */
+    private void laser(CommandSender sender) {
+        yc w = world();
+        int[] p = spot();
+        ensureClaim(p);
+        iq player = intruder(w);
+        int y = p[1], z = p[2];
+        int[] xs = { p[0], p[0] + OPEN_OFFSET };
+        String[] where = { "claim", "open" };
+
+        org.bukkit.World bw = getServer().getWorlds().get(0);
+        for (int i = 0; i < 2; i++) {
+            int x = xs[i];
+            for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) bw.loadChunk((x + dx) >> 4, (z + dz) >> 4);
+            w.d(x, y, z, 1, 0);
+            fire(w, player, x, y, z, false);
+            String mined = block(w, x, y, z);
+            clear(w, x, y, z, 1);
+
+            for (int dx = -1; dx <= 1; dx++) for (int dy = -2; dy <= 0; dy++) for (int dz = -1; dz <= 1; dz++)
+                w.d(x + dx, y + dy, z + dz, 1, 0);
+            int placed = stone(w, x, y, z);
+            fire(w, player, x, y, z, true);
+            int destroyed = placed - stone(w, x, y, z);
+            clear(w, x, y, z, 6);
+
+            sender.sendMessage(TAG + "laser " + where[i] + ": mining left " + mined + ", explosive destroyed " + destroyed
+                    + " of " + placed + " stone"
+                    + (i == 0 ? "  (stock 0:0 and some, fixed 1:0 and 0)" : "  (stock and fixed 0:0 and some)"));
+        }
+    }
+
+    /** Stone in the 3x3x3 cube whose top centre is x,y,z. */
+    private static int stone(yc w, int x, int y, int z) {
+        int n = 0;
+        for (int dx = -1; dx <= 1; dx++) for (int dy = -2; dy <= 0; dy++) for (int dz = -1; dz <= 1; dz++)
+            if (w.a(x + dx, y + dy, z + dz) == 1) n++;
+        return n;
+    }
+
+    private void fire(yc w, iq player, int x, int y, int z, boolean explosive) {
+        player.b(x + 0.5, y + 2.0, z + 0.5);                              // setPosition
+        player.z = 0F;                                                    // rotationYaw
+        player.A = 90F;                                                   // rotationPitch, straight down
+        EntityMiningLaser beam = new EntityMiningLaser(w, player, 64F, explosive ? 12F : 5F, Integer.MAX_VALUE, explosive);
+        for (int t = 0; t < 200 && !beam.L; t++) beam.j_();                // onUpdate until isDead
+    }
+
+    /**
+     * An ACT Mk II (4092:1) with one Deep Storage Unit holding 1000 cobblestone in its first
+     * input slot, and Owner shift-clicking 15 empty Deep Storage Units in from hotbar slot 0.
+     * Counts the cobblestone every DSU in the table and the player's inventory holds.
+     */
+    private void act2(CommandSender sender) {
+        yc w = world();
+        int[] p = spot();
+        iq player = CraftFakePlayer.get(w, "Owner", true);
+        int x = p[0] + OPEN_OFFSET, y = p[1] + 30, z = p[2];
+
+        w.d(x, y, z, 4092, 1);
+        TileAutoCraftingMk2 table = (TileAutoCraftingMk2) w.q(x, y, z);
+        ur full = new ur(3131, 1, 3);
+        bq tag = new bq();
+        tag.a("storedId", 4);
+        tag.a("storedMeta", 0);
+        tag.a("storedQuantity", 1000);
+        full.d(tag);                                                      // setTagCompound
+        table.a(10, full);
+
+        for (int i = 0; i < player.bJ.a.length; i++) player.bJ.a[i] = null;
+        player.bJ.a[0] = new ur(3131, 15, 3);
+        player.b(x + 0.5, y + 1.0, z + 1.5);
+        ContainerAutoCraftingMk2 gui = new ContainerAutoCraftingMk2(player, table);
+        player.bL = gui;
+        int before = storedIn(table, player);
+        String thrown = "";
+        try {
+            gui.a(58, 0, 1, player);                                      // shift-click hotbar slot 0
+        } catch (Throwable t) {
+            thrown = ", threw " + t;
+        }
+        int after = storedIn(table, player);
+        sender.sendMessage(TAG + "act2: slot 10 " + dsuStack(table.a(10)) + ", slot 11 " + dsuStack(table.a(11))
+                + ", hotbar " + dsuStack(player.bJ.a[0]) + ", stored cobblestone " + before + " -> " + after + thrown
+                + "  (stock 16 full / 16000, fixed 1 full + 15 empty / 1000)");
+
+        player.bL = player.bK;
+        for (int i = 0; i < player.bJ.a.length; i++) player.bJ.a[i] = null;
+        for (int i = 0; i < table.k_(); i++) table.a(i, null);
+        w.e(x, y, z, 0);
+    }
+
+    /**
+     * Owner holds a Canvas Bag (9268) in hotbar slot 0 with 64 diamonds in its first slot, opens
+     * it, hovers the diamonds and presses the number key for hotbar slot 0 (click mode 2).
+     * Counts diamonds in the inventory plus inside every bag in the inventory.
+     */
+    private void bag(CommandSender sender) {
+        yc w = world();
+        iq player = CraftFakePlayer.get(w, "Owner", true);
+        for (int i = 0; i < player.bJ.a.length; i++) player.bJ.a[i] = null;
+        ur bag = new ur(9268, 1, 0);
+        ItemBag.getBagInventory(bag).a(0, new ur(264, 64, 0));             // packs into the bag's NBT
+        player.bJ.a[0] = bag;
+        player.bJ.c = 0;                                                  // currentItem
+        ContainerBag gui = new ContainerBag(player.bJ, ItemBag.getBagInventory(bag), bag);
+        player.bL = gui;
+        int before = diamonds(player);
+        String thrown = "";
+        try {
+            gui.a(0, 0, 2, player);                                       // slotClick: bag slot 0, number key 1
+        } catch (Throwable t) {
+            thrown = ", threw " + t;
+        }
+        sender.sendMessage(TAG + "bag: diamonds " + before + " -> " + diamonds(player) + thrown
+                + "  (stock 64 -> 128, fixed 64 -> 64)");
+        player.bL = player.bK;
+        for (int i = 0; i < player.bJ.a.length; i++) player.bJ.a[i] = null;
+    }
+
+    /**
+     * A Filler placed by Intruder two blocks outside the claim, with a one block box on a stone
+     * block inside it and the Clear pattern, runs one work step. The same on open ground.
+     */
+    private void filler(CommandSender sender) {
+        yc w = world();
+        int[] p = spot();
+        ensureClaim(p);
+        iq player = intruder(w);
+        int y = p[1] + 5, z = p[2];
+        int[] targets = { p[0] + CLAIM_HALF - 1, p[0] + OPEN_OFFSET };
+        String[] where = { "claim", "open" };
+        IFillerPattern clear = null;
+        for (int id = 1; id < 32 && clear == null; id++) {
+            IFillerPattern pattern = FillerManager.registry.getPattern(id);
+            if (pattern instanceof FillerRemover) clear = pattern;
+        }
+        for (int i = 0; i < 2; i++) {
+            int tx = targets[i], fx = tx + 3;
+            w.d(tx, y, z, 1, 0);
+            w.d(fx, y, z, 155, 0);                                        // Filler
+            player.b(fx + 0.5, y + 1.0, z + 2.5);
+            amq.p[155].a(w, fx, y, z, player);                            // onBlockPlacedBy, as when Intruder places it
+            TileFiller f = (TileFiller) w.q(fx, y, z);
+            String thrown = "";
+            try {
+                f.box.initialize(tx, y, z, tx, y, z);
+                f.currentPattern = clear;
+                f.done = false;
+                f.getPowerProvider().receiveEnergy(100F, net.minecraftforge.common.ForgeDirection.DOWN);
+                f.doWork();
+            } catch (Throwable t) {
+                thrown = ", threw " + t;
+            }
+            sender.sendMessage(TAG + "filler " + where[i] + ": target " + block(w, tx, y, z) + thrown
+                    + (i == 0 ? "  (stock 0:0, fixed 1:0)" : "  (stock and fixed 0:0)"));
+            w.e(tx, y, z, 0);
+            w.e(fx, y, z, 0);
+        }
+    }
+
+    /**
+     * A Quarry placed by Intruder four blocks outside the claim, its head sent to a stone block
+     * inside the claim (the quarry mines the block under targetY). The same on open ground.
+     */
+    private void quarry(CommandSender sender) {
+        yc w = world();
+        int[] p = spot();
+        ensureClaim(p);
+        iq player = intruder(w);
+        int y = p[1] + 10, z = p[2];
+        int[] targets = { p[0] + CLAIM_HALF - 1, p[0] + OPEN_OFFSET };
+        String[] where = { "claim", "open" };
+        for (int i = 0; i < 2; i++) {
+            int tx = targets[i], qx = tx + 5;
+            w.d(tx, y, z, 1, 0);
+            w.d(qx, y + 3, z, 153, 0);                                    // Quarry
+            player.b(qx + 0.5, y + 4.0, z + 2.5);
+            amq.p[153].a(w, qx, y + 3, z, player);                        // onBlockPlacedBy
+            TileQuarry q = (TileQuarry) w.q(qx, y + 3, z);
+            String thrown = "";
+            try {
+                q.targetX = tx;
+                q.targetY = y + 1;
+                q.targetZ = z;
+                q.positionReached();
+            } catch (Throwable t) {
+                thrown = ", threw " + t;
+            }
+            sender.sendMessage(TAG + "quarry " + where[i] + ": target " + block(w, tx, y, z) + thrown
+                    + (i == 0 ? "  (stock 0:0, fixed 1:0)" : "  (stock and fixed 0:0)"));
+            clear(w, tx, y, z, 1);
+            w.e(qx, y + 3, z, 0);
+        }
+    }
+
+    /**
+     * A mining turtle placed by Intruder just outside the claim, facing a stone block just inside
+     * it, digs (side 4, toward -x), then with the cell cleared moves into it. The same on open
+     * ground. Calls the turtle's private dig and move, which the Lua API queues.
+     */
+    private void turtle(CommandSender sender) {
+        yc w = world();
+        int[] p = spot();
+        ensureClaim(p);
+        iq player = intruder(w);
+        int y = p[1] + 15, z = p[2];
+        int[] targets = { p[0] + CLAIM_HALF, p[0] + OPEN_OFFSET };
+        String[] where = { "claim", "open" };
+        for (int i = 0; i < 2; i++) {
+            int tx = targets[i], sx = tx + 1;
+            w.d(tx, y, z, 1, 0);
+            w.d(sx, y, z, 209, 0);                                        // Turtle
+            player.b(sx + 0.5, y + 1.0, z + 2.5);
+            amq.p[209].a(w, sx, y, z, player);                            // onBlockPlacedBy
+            String dug = "?", moved = "?", thrown = "";
+            try {
+                TileEntityTurtle t = (TileEntityTurtle) w.q(sx, y, z);
+                t.setUpgrades(dan200.CCTurtle.getTurtleUpgrade(5), null); // Mining
+                t.setFuelLevel(1000);
+                java.lang.reflect.Method dig = TileEntityTurtle.class.getDeclaredMethod("dig", int.class);
+                dig.setAccessible(true);
+                dug = dig.invoke(t, 4) + " " + block(w, tx, y, z);
+                w.e(tx, y, z, 0);
+                java.lang.reflect.Method move = TileEntityTurtle.class.getDeclaredMethod("move", int.class);
+                move.setAccessible(true);
+                moved = move.invoke(t, 4) + " " + block(w, tx, y, z);
+            } catch (Throwable t) {
+                thrown = ", threw " + (t.getCause() != null ? t.getCause() : t);
+            }
+            sender.sendMessage(TAG + "turtle " + where[i] + ": dig " + dug + ", move " + moved + thrown
+                    + (i == 0 ? "  (stock dig true 0:0, move true 209; fixed dig false 1:0, move false 0:0)"
+                              : "  (stock and fixed dig true 0:0, move true 209)"));
+            w.e(tx, y, z, 0);
+            w.e(sx, y, z, 0);
+        }
+    }
+
+    /**
+     * A Quarry forces its own chunk and then a 64x64 area spanning 5x5 chunks on a fresh ticket,
+     * as setBoundaries and forceChunkLoading do. The ticket holds 25 chunks, so one is dropped:
+     * checks it isn't the quarry's own. Then BuildCraft's ticket callback runs for a ticket whose
+     * quarry position holds stone.
+     */
+    private void quarrychunks(CommandSender sender) {
+        yc w = world();
+        int[] p = spot();
+        int y = p[1] + 40;
+        int x0 = (((p[0] + 300) >> 4) << 4) + 15, z0 = ((p[2] >> 4) << 4) + 15;
+        int qx = x0 - 20, qz = z0 - 20;
+        getServer().getWorlds().get(0).loadChunk(qx >> 4, qz >> 4);
+        w.d(qx, y, qz, 153, 0);
+        TileQuarry q = (TileQuarry) w.q(qx, y, qz);
+        String kept = "?", reload;
+        net.minecraftforge.common.ForgeChunkManager.Ticket t = net.minecraftforge.common.ForgeChunkManager.requestTicket(
+                buildcraft.BuildCraftFactory.instance, w, net.minecraftforge.common.ForgeChunkManager.Type.NORMAL);
+        try {
+            q.box.initialize(x0, y, z0, x0 + 63, y + 4, z0 + 63);
+            net.minecraftforge.common.ForgeChunkManager.forceChunk(t, new xv(qx >> 4, qz >> 4));
+            q.forceChunkLoading(t);
+            // MCPC+ relocates Guava, so read the ImmutableSet through reflection as a plain Collection.
+            java.util.Collection chunks = (java.util.Collection) t.getClass().getMethod("getChunkList").invoke(t);
+            kept = chunks.contains(new xv(qx >> 4, qz >> 4)) + " of " + chunks.size();
+        } catch (Throwable th) {
+            kept = "threw " + th;
+            th.printStackTrace();
+        }
+        net.minecraftforge.common.ForgeChunkManager.releaseTicket(t);
+
+        w.d(qx + 2, y, qz, 1, 0);
+        net.minecraftforge.common.ForgeChunkManager.Ticket bad = net.minecraftforge.common.ForgeChunkManager.requestTicket(
+                buildcraft.BuildCraftFactory.instance, w, net.minecraftforge.common.ForgeChunkManager.Type.NORMAL);
+        bad.getModData().a("quarryX", qx + 2);
+        bad.getModData().a("quarryY", y);
+        bad.getModData().a("quarryZ", qz);
+        try {
+            List tickets = new java.util.ArrayList();
+            tickets.add(bad);
+            buildcraft.BuildCraftFactory.instance.new QuarryChunkloadCallback().ticketsLoaded(tickets, w);
+            reload = "ran";
+        } catch (Throwable th) {
+            reload = "threw " + th.getClass().getSimpleName();
+        }
+        net.minecraftforge.common.ForgeChunkManager.releaseTicket(bad);
+        sender.sendMessage(TAG + "quarrychunks: ticket holds quarry chunk " + kept + ", ticket reload with no quarry " + reload
+                + "  (stock false of 25 and threw NullPointerException, fixed true of 25 and ran)");
+        w.e(qx + 2, y, qz, 0);
+        w.e(qx, y, qz, 0);
+    }
+
+    private static int diamonds(iq player) {
+        int n = 0;
+        for (ur s : player.bJ.a) {
+            if (s == null) continue;
+            if (s.c == 264) n += s.a;
+            la inside = ItemBag.getBagInventory(s);
+            if (inside != null) {
+                for (int i = 0; i < inside.k_(); i++) {
+                    ur t = inside.a(i);
+                    if (t != null && t.c == 264) n += t.a;
+                }
+            }
+        }
+        return n;
+    }
+
+    private static int storedIn(la table, iq player) {
+        int n = 0;
+        for (int i = 0; i < table.k_(); i++) n += storedIn(table.a(i));
+        for (ur s : player.bJ.a) n += storedIn(s);
+        return n;
+    }
+
+    private static int storedIn(ur s) {
+        if (s == null || s.c != 3131 || s.j() != 3 || s.p() == null) return 0;
+        return s.a * s.p().e("storedQuantity");
+    }
+
+    private static String dsuStack(ur s) {
+        if (s == null) return "empty";
+        return s.a + "x " + s.c + ":" + s.j() + (s.p() == null ? " no tag" : " holding " + s.p().e("storedQuantity"));
+    }
+
+    /** Sets everything within r blocks of x,y,z to air, fire included. */
+    private static void clear(yc w, int x, int y, int z, int r) {
+        for (int dx = -r; dx <= r; dx++) for (int dy = -r; dy <= r; dy++) for (int dz = -r; dz <= r; dz++)
+            if (w.a(x + dx, y + dy, z + dz) != 0) w.e(x + dx, y + dy, z + dz, 0);
     }
 
     /** Cobblestone on the ground near x,y,z, counting a dropped DSU's stored cobblestone too. */

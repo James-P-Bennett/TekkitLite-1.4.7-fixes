@@ -4,7 +4,7 @@
 #   ./build.sh                 build all mods found at the default paths
 #
 # Override any path with an env var:
-#   MODS  COREMODS  MCPC  MFR_SRC  EE3_SRC  AE_SRC  FZ_SRC  TC_SRC  NEI_SRC  ASM  JAVAC8
+#   MODS  COREMODS  MCPC  MFR_SRC  EE3_SRC  AE_SRC  FZ_SRC  IC2_SRC  IMMIBIS_SRC  RPCORE_SRC  BC_SRC  CC_SRC  TC_SRC  NEI_SRC  ASM  JAVAC8
 #
 # Helper classes are compiled against the server's mcpcplus.jar, which holds the whole
 # obfuscated 1.4.7 game plus Forge and Bukkit, and against the mod jars they call into.
@@ -20,6 +20,11 @@ MFR_SRC="${MFR_SRC:-$MODS/MineFactoryReloaded-2.3.2-287.jar}"
 EE3_SRC="${EE3_SRC:-$MODS/ee3-universal-pre1f.jar}"
 AE_SRC="${AE_SRC:-$MODS/appeng-rv9-i.zip}"
 FZ_SRC="${FZ_SRC:-$MODS/Factorization-0.7.21.jar}"
+IC2_SRC="${IC2_SRC:-$MODS/industrialcraft-2_1.115.231-lf.jar}"
+IMMIBIS_SRC="${IMMIBIS_SRC:-$MODS/immibis-core-52.4.6.jar}"
+RPCORE_SRC="${RPCORE_SRC:-$MODS/RedPowerCore-2.0pr6.zip}"
+BC_SRC="${BC_SRC:-$MODS/buildcraft-A-3.4.3.jar}"
+CC_SRC="${CC_SRC:-$MODS/ComputerCraft1.5.zip}"
 PCC="${PCC:-$COREMODS/PowerCrystalsCore-1.0.3-34.jar}"
 TC_SRC="${TC_SRC:-$COREMODS/[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.CoreMod.jar}"
 NEI_SRC="${NEI_SRC:-$COREMODS/NotEnoughItems 1.4.7.0.jar}"
@@ -32,7 +37,7 @@ JAVAC8="${JAVAC8:-/usr/lib/jvm/java-8-openjdk/bin/javac}"
 [ -f "$ASM" ]    || { echo "ASM not found at $ASM, set ASM=..." >&2; exit 1; }
 [ -x "$JAVAC8" ] || { echo "Java 8 javac not found at $JAVAC8, set JAVAC8=..." >&2; exit 1; }
 [ -f "$MCPC" ]   || { echo "mcpcplus.jar not found at $MCPC, copy it from the server or set MCPC=..." >&2; exit 1; }
-for j in "$MFR_SRC" "$EE3_SRC" "$AE_SRC" "$FZ_SRC" "$PCC" "$TC_SRC" "$NEI_SRC" "$CCC" "$BSPKRS"; do
+for j in "$MFR_SRC" "$EE3_SRC" "$AE_SRC" "$FZ_SRC" "$PCC" "$IC2_SRC" "$IMMIBIS_SRC" "$RPCORE_SRC" "$BC_SRC" "$CC_SRC" "$TC_SRC" "$NEI_SRC" "$CCC" "$BSPKRS"; do
   [ -f "$j" ] || { echo "not found: $j" >&2; exit 1; }
 done
 
@@ -44,12 +49,12 @@ mkdir -p build/cls build/tool
 # kills the script with no explanation.
 "$JAVAC8" -nowarn -source 1.6 -target 1.6 \
   -bootclasspath "$(dirname "$JAVAC8")/../jre/lib/rt.jar" \
-  -cp "$MCPC:$MFR_SRC:$PCC:$EE3_SRC:$TC_SRC:$BSPKRS:$NEI_SRC:$CCC" -d build/cls \
-  src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java 2>&1 \
+  -cp "$MCPC:$MFR_SRC:$PCC:$EE3_SRC:$IC2_SRC:$IMMIBIS_SRC:$RPCORE_SRC:$BC_SRC:$CC_SRC:$TC_SRC:$BSPKRS:$NEI_SRC:$CCC" -d build/cls \
+  src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java src/TLiteImmibis.java src/TLiteBC.java src/TLiteTurtle.java 2>&1 \
   | grep -vE 'bootstrap class path|source value 1\.6|target value 1\.6|options|unchecked' || true
 
 for f in build/cls/TLiteProtect.class build/cls/TLiteMFR.class build/cls/TLiteEE3.class \
-         build/cls/TLiteTreeCap.class build/cls/TLiteNEI.class; do
+         build/cls/TLiteTreeCap.class build/cls/TLiteNEI.class build/cls/TLiteImmibis.class build/cls/TLiteBC.class build/cls/TLiteTurtle.class; do
   [ -f "$f" ] || { echo "helper class missing after compile: $f" >&2; exit 1; }
 done
 
@@ -62,8 +67,8 @@ patch_one() {
 }
 
 patch_one "MineFactoryReloaded" "$MFR_SRC" "MineFactoryReloaded-2.3.2-287-patched.jar" \
-          PatchMFR.java "unifierdupe,dsudupe" \
-          build/cls/TLiteMFR.class
+          PatchMFR.java "unifierdupe,dsudupe,packets" \
+          build/cls/TLiteMFR.class build/cls/TLiteProtect.class
 
 patch_one "EE3" "$EE3_SRC" "ee3-universal-pre1f-patched.jar" \
           PatchEE3.java "requestcheck,protect" \
@@ -77,6 +82,18 @@ patch_one "Factorization" "$FZ_SRC" "Factorization-0.7.21-patched.jar" \
           PatchFZ.java "wrathigniter" \
           build/cls/TLiteProtect.class
 
+patch_one "immibis-core" "$IMMIBIS_SRC" "immibis-core-52.4.6-patched.jar" \
+          PatchImmibis.java "mergenbt" \
+          build/cls/TLiteImmibis.class
+
+patch_one "BuildCraft" "$BC_SRC" "buildcraft-A-3.4.3-patched.jar" \
+          PatchBC.java "quarry,filler,quarrychunks" \
+          build/cls/TLiteBC.class build/cls/TLiteProtect.class
+
+patch_one "ComputerCraft" "$CC_SRC" "ComputerCraft1.5-patched.zip" \
+          PatchCC.java "turtle" \
+          build/cls/TLiteTurtle.class build/cls/TLiteProtect.class
+
 # Coremods. Server side like the rest: they go in the server's coremods/ folder.
 patch_one "TreeCapitator" "$TC_SRC" "[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.CoreMod-patched.jar" \
           PatchTC.java "felling" \
@@ -85,3 +102,37 @@ patch_one "TreeCapitator" "$TC_SRC" "[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.Co
 patch_one "NotEnoughItems" "$NEI_SRC" "NotEnoughItems 1.4.7.0-patched.jar" \
           PatchNEI.java "spawner,creative" \
           build/cls/TLiteNEI.class build/cls/TLiteProtect.class
+
+# Coremod for the signed jars (IndustrialCraft 2, RedPower Core). Changing a class in a signed jar
+# breaks the mod, so these fixes are applied by a class transformer as the classes load. Built
+# against the server's own ASM 4.0, and checked against the stock jars before it is packaged.
+ASM4="${ASM4:-$(dirname "$MCPC")/lib/asm-all-4.0.jar}"
+[ -f "$ASM4" ] || { echo "ASM 4.0 not found at $ASM4, set ASM4=..." >&2; exit 1; }
+rm -rf build/coremod
+mkdir -p build/coremod
+"$JAVAC8" -nowarn -source 1.6 -target 1.6 \
+  -bootclasspath "$(dirname "$JAVAC8")/../jre/lib/rt.jar" \
+  -cp "$MCPC:$ASM4:$IC2_SRC:$RPCORE_SRC" -d build/coremod \
+  coremod/tlitefixes/*.java src/TLiteProtect.java src/TLiteIC2.java src/TLiteRP.java 2>&1 \
+  | grep -vE 'bootstrap class path|source value 1\.6|target value 1\.6|options|unchecked' || true
+java -cp "$ASM4:$MCPC:build/coremod" tlitefixes.TLiteTransformer "$IC2_SRC" "$RPCORE_SRC"
+printf 'Manifest-Version: 1.0\nFMLCorePlugin: tlitefixes.TLiteCorePlugin\n' > build/coremod.mf
+rm -f TLiteFixes-coremod.jar
+"$(dirname "$JAVAC8")/jar" cfm TLiteFixes-coremod.jar build/coremod.mf -C build/coremod .
+echo "OK  wrote TLiteFixes-coremod.jar"
+
+# Bukkit plugin: TekkitLiteCustomizer, the item ban plugin, without its old Block Breaker next to
+# Deep Storage Unit placement ban (dsudupe fixes that inside MFR).
+rm -rf build/customizer
+mkdir -p build/customizer
+"$JAVAC8" -nowarn -source 1.6 -target 1.6 \
+  -bootclasspath "$(dirname "$JAVAC8")/../jre/lib/rt.jar" \
+  -cp "$MCPC" -d build/customizer \
+  plugins/TekkitLiteCustomizer/src/me/ryanhamshire/TekkitCustomizer/*.java 2>&1 \
+  | grep -vE 'bootstrap class path|source value 1\.6|target value 1\.6|options|unchecked|deprecat|^Note:' || true
+[ -f build/customizer/me/ryanhamshire/TekkitCustomizer/TekkitCustomizer.class ] \
+  || { echo "TekkitLiteCustomizer failed to compile" >&2; exit 1; }
+cp plugins/TekkitLiteCustomizer/plugin.yml build/customizer/
+rm -f TekkitLiteCustomizer.jar
+(cd build/customizer && "$(dirname "$JAVAC8")/jar" cf ../../TekkitLiteCustomizer.jar .)
+echo "OK  wrote TekkitLiteCustomizer.jar"

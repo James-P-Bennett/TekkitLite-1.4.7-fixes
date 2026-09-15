@@ -1,0 +1,213 @@
+package tlitefixes;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
+
+import cpw.mods.fml.relauncher.IClassTransformer;
+
+/**
+ * Patches classes from signed mod jars as they load. Written against ASM 4.0, the version the
+ * 1.4.7 server ships in lib/.
+ *
+ *   IC2 laser    EntityMiningLaser.onUpdate (obf j_)
+ *                  this.canMine(blockId) -> TLiteIC2.canMine(this, blockId, x, y, z)
+ *                EntityMiningLaser.explode
+ *                  explosion.doExplosion() -> TLiteIC2.doExplosion(explosion, this)
+ *                ExplosionIC2.doExplosion
+ *                  chunkCache.getBlockId(x, y, z) -> TLiteIC2.explosionBlockId(chunkCache, x, y, z, this)
+ *
+ *   RP bagdupe   ContainerBag gains slotClick (obf a(IIILqx;)Lur;):
+ *                  if (!TLiteRP.allowClick(this, slot, mode, this.itemBag)) return null;
+ *                  return super.slotClick(slot, button, mode, player);
+ *
+ * When a class doesn't have exactly the expected sites it is left unpatched and a line is
+ * logged, so a different mod version can't be half patched. build.sh runs main() against the
+ * stock jars and fails the build if any site is missing.
+ */
+public class TLiteTransformer implements IClassTransformer {
+
+    static final String TAG = "[TLiteFixes] ";
+
+    static final String LASER = "ic2/core/item/tool/EntityMiningLaser";
+    static final String EXPLOSION = "ic2/core/ExplosionIC2";
+    static final String BAG = "com/eloraam/redpower/base/ContainerBag";
+    static final String CLICK = "(IIILqx;)Lur;";
+
+    public byte[] transform(String name, byte[] bytes) {
+        if (name == null || bytes == null) {
+            return bytes;
+        }
+        String internal = name.replace('.', '/');
+        if (!internal.equals(LASER) && !internal.equals(EXPLOSION) && !internal.equals(BAG)) {
+            return bytes;
+        }
+        try {
+            byte[] out = patch(internal, bytes);
+            if (out != null) {
+                System.out.println(TAG + "patched " + name);
+                return out;
+            }
+            System.out.println(TAG + "SEVERE: " + name + " does not match this fix's mod version, left unpatched");
+        } catch (Throwable t) {
+            System.out.println(TAG + "SEVERE: failed to patch " + name + ", left unpatched: " + t);
+        }
+        return bytes;
+    }
+
+    /** The patched class, or null when the class doesn't have exactly the expected sites. */
+    static byte[] patch(String internal, byte[] bytes) {
+        ClassNode cn = new ClassNode();
+        new ClassReader(bytes).accept(cn, ClassReader.SKIP_FRAMES);
+        boolean ok;
+        if (internal.equals(LASER)) ok = patchLaser(cn);
+        else if (internal.equals(EXPLOSION)) ok = patchExplosion(cn);
+        else ok = patchBag(cn);
+        if (!ok) {
+            return null;
+        }
+        ClassWriter cw = new ClassWriter(0);
+        cn.accept(cw);
+        return cw.toByteArray();
+    }
+
+    /**
+     * onUpdate j_(): the hit block's x, y, z are in locals 8, 9, 10 when canMine(I)Z is called
+     * with [this, blockId] on the stack. explode(): the only doExplosion call has [explosion].
+     */
+    static boolean patchLaser(ClassNode cn) {
+        int mine = 0, explode = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            boolean update = m.name.equals("j_") && m.desc.equals("()V");
+            boolean exploding = m.name.equals("explode") && m.desc.equals("()V");
+            if (!update && !exploding) continue;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
+                MethodInsnNode mi = (MethodInsnNode) i;
+                if (update && mi.owner.equals(LASER) && mi.name.equals("canMine") && mi.desc.equals("(I)Z")) {
+                    InsnList xyz = new InsnList();
+                    xyz.add(new VarInsnNode(Opcodes.ILOAD, 8));
+                    xyz.add(new VarInsnNode(Opcodes.ILOAD, 9));
+                    xyz.add(new VarInsnNode(Opcodes.ILOAD, 10));
+                    m.instructions.insertBefore(mi, xyz);
+                    m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", "canMine",
+                            "(L" + LASER + ";IIII)Z"));
+                    m.maxStack += 3;
+                    mine++;
+                }
+                if (exploding && mi.owner.equals(EXPLOSION) && mi.name.equals("doExplosion") && mi.desc.equals("()V")) {
+                    m.instructions.insertBefore(mi, new VarInsnNode(Opcodes.ALOAD, 0));
+                    m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", "doExplosion",
+                            "(L" + EXPLOSION + ";L" + LASER + ";)V"));
+                    m.maxStack += 1;
+                    explode++;
+                }
+            }
+        }
+        return mine == 1 && explode == 1;
+    }
+
+    /** doExplosion(): the only ys.a(III)I call has [cache, x, y, z]; this is pushed after them. */
+    static boolean patchExplosion(ClassNode cn) {
+        int hits = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("doExplosion") || !m.desc.equals("()V")) continue;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
+                MethodInsnNode mi = (MethodInsnNode) i;
+                if (!mi.owner.equals("ys") || !mi.name.equals("a") || !mi.desc.equals("(III)I")) continue;
+                m.instructions.insertBefore(mi, new VarInsnNode(Opcodes.ALOAD, 0));
+                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", "explosionBlockId",
+                        "(Lys;IIIL" + EXPLOSION + ";)I"));
+                m.maxStack += 1;
+                hits++;
+            }
+        }
+        return hits == 1;
+    }
+
+    /** Adds the slotClick override; refuses when ContainerBag already has one. */
+    static boolean patchBag(ClassNode cn) {
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (m.name.equals("a") && m.desc.equals(CLICK)) {
+                return false;
+            }
+        }
+        MethodNode m = new MethodNode(Opcodes.ACC_PUBLIC, "a", CLICK, null, null);
+        InsnList c = m.instructions;
+        LabelNode allowed = new LabelNode();
+        c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        c.add(new VarInsnNode(Opcodes.ILOAD, 1));
+        c.add(new VarInsnNode(Opcodes.ILOAD, 3));
+        c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        c.add(new FieldInsnNode(Opcodes.GETFIELD, BAG, "itemBag", "Lur;"));
+        c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRP", "allowClick", "(Lrq;IILur;)Z"));
+        c.add(new JumpInsnNode(Opcodes.IFNE, allowed));
+        c.add(new InsnNode(Opcodes.ACONST_NULL));
+        c.add(new InsnNode(Opcodes.ARETURN));
+        c.add(allowed);
+        c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        c.add(new VarInsnNode(Opcodes.ILOAD, 1));
+        c.add(new VarInsnNode(Opcodes.ILOAD, 2));
+        c.add(new VarInsnNode(Opcodes.ILOAD, 3));
+        c.add(new VarInsnNode(Opcodes.ALOAD, 4));
+        c.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, "rq", "a", CLICK));
+        c.add(new InsnNode(Opcodes.ARETURN));
+        m.maxStack = 5;
+        m.maxLocals = 5;
+        cn.methods.add(m);
+        return true;
+    }
+
+    /**
+     * Build check: TLiteTransformer <ic2.jar> <RedPowerCore.zip>. Patches the three classes from
+     * the stock jars and exits non zero unless every one applies.
+     */
+    public static void main(String[] args) throws IOException {
+        if (args.length < 2) {
+            System.err.println("usage: TLiteTransformer <ic2.jar> <RedPowerCore.zip>");
+            System.exit(2);
+        }
+        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG } };
+        boolean failed = false;
+        for (String[] check : checks) {
+            ZipFile zf = new ZipFile(check[0]);
+            ZipEntry e = zf.getEntry(check[1] + ".class");
+            byte[] out = e == null ? null : patch(check[1], readAll(zf.getInputStream(e)));
+            zf.close();
+            System.out.println((out != null ? "OK  " : "FAIL") + "  coremod patch " + check[1]);
+            failed |= out == null;
+        }
+        if (failed) {
+            System.exit(1);
+        }
+    }
+
+    static byte[] readAll(InputStream is) throws IOException {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = is.read(buf)) > 0) bos.write(buf, 0, n);
+        is.close();
+        return bos.toByteArray();
+    }
+}

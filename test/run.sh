@@ -22,6 +22,9 @@ JARS=(
   "ee3-universal-pre1f.jar|ee3-universal-pre1f-patched.jar"
   "appeng-rv9-i.zip|appeng-rv9-i-patched.zip"
   "Factorization-0.7.21.jar|Factorization-0.7.21-patched.jar"
+  "immibis-core-52.4.6.jar|immibis-core-52.4.6-patched.jar"
+  "buildcraft-A-3.4.3.jar|buildcraft-A-3.4.3-patched.jar"
+  "ComputerCraft1.5.zip|ComputerCraft1.5-patched.zip"
 )
 
 COREJARS=(
@@ -45,6 +48,9 @@ swap() {
 }
 swap mods "$STOCK" "${JARS[@]}"
 swap coremods "$STOCK_CORE" "${COREJARS[@]}"
+# The coremod for the signed jars is new, not a replacement: only there when patched.
+rm -f "$SRV/coremods/TLiteFixes-coremod.jar"
+[ "$MODE" = patched ] && cp TLiteFixes-coremod.jar "$SRV/coremods/"
 cp build/TLFixTest.jar "$SRV/plugins/"
 
 cd "$SRV"

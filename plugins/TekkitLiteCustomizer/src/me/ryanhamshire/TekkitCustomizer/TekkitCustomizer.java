@@ -89,10 +89,6 @@ public class TekkitCustomizer extends JavaPlugin
 		BlockEventHandler blockEventHandler = new BlockEventHandler();
 		pluginManager.registerEvents(blockEventHandler, this);
 
-		//block events
-		AdjacentBlockDupePatch adjacentBlockDupePatch = new AdjacentBlockDupePatch();
-		pluginManager.registerEvents(adjacentBlockDupePatch, this);
-		
 		//entity events
 		EntityEventHandler entityEventHandler = new EntityEventHandler();
 		pluginManager.registerEvents(entityEventHandler, this);

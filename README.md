@@ -9,12 +9,16 @@ Each patch is selectable individually.
 
 | Mod | Patches |
 |---|---|
-| [MineFactoryReloaded 2.3.2](#minefactoryreloaded-232) | `unifierdupe` · `dsudupe` |
+| [MineFactoryReloaded 2.3.2](#minefactoryreloaded-232) | `unifierdupe` · `dsudupe` · `packets` |
 | [EE3 pre1f](#ee3-pre1f) | `requestcheck` · `protect` |
 | [Applied Energistics rv9](#applied-energistics-rv9) | `entropy` · `catalyst` · `monitor` |
 | [Factorization 0.7.21](#factorization-0721) | `wrathigniter` |
 | [TreeCapitator 1.4.6 r07](#treecapitator-146-r07-coremod) (coremod) | `felling` |
 | [NotEnoughItems 1.4.7.0](#notenoughitems-1470-coremod) (coremod) | `spawner` · `creative` |
+| [BuildCraft 3.4.3](#buildcraft-343) | `quarry` · `filler` · `quarrychunks` |
+| [ComputerCraft 1.5](#computercraft-15) | `turtle` |
+| [immibis-core 52.4.6](#immibis-core-5246-tubestuff) (Tubestuff) | `mergenbt` |
+| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` |
 
 Bukkit plugins have [their own section](#plugins). The fixes that used to live in plugins are
 now done inside the mods, so they hold no matter which protection plugin the server runs.
@@ -42,6 +46,14 @@ stops a player breaking that block now also stops the item.
 - Every patched jar carries its own identical copy of `TLiteProtect`. Build them together.
 - Plugins that log `BlockBreakEvent`, such as CoreProtect, may record an allowed change as a
   break by that player. Not checked.
+
+Machines that work with no player at hand (Quarry, Filler, Turtles) remember who placed them and
+ask as that player, through an offline MCPC+ fake player with the owner's name. The Mining Laser
+asks the same way for its shooter. The fake player has no connection, so GriefPrevention's
+refusal messages go nowhere instead of spamming the owner. A machine placed before these patches
+has no owner and asks under a name no claim trusts, so it keeps working on open ground and is
+refused inside every claim. Right clicking an ownerless Filler or Turtle with permission to break
+it makes that player its owner.
 
 ---
 
@@ -104,6 +116,30 @@ blocks, works the same way.
 it, broken by a powered RedPower Block Breaker, then the three DSU slots shift-clicked in the
 GUI. Stock: GUI still usable, the dropped DSU held 1000 and 66 more came out of the GUI, 1066
 in total. Patched: GUI no longer usable, nothing came out of the GUI, 1000 in total.
+
+</details>
+
+<details>
+<summary><b><code>packets</code>: change anyone's MFR machines from anywhere, and pipe items out of their DSU</b></summary>
+
+**The bug.** Six GUI buttons send a packet with the machine's coordinates, and
+`ServerPacketHandler.onPacketData` uses them as they are: no distance check, no check that the
+sender has that GUI open, and the lookup loads chunks anywhere. Any player can:
+
+- flip a Deep Storage Unit face to output. Flip the face next to your own land, put a pipe
+  there, and the owner's stored items come out to you.
+- lower an Auto Enchanter's level, which finishes the current enchant at once at level 1
+- write any settings key into a Harvester, with no limit on how many
+- toggle a Chronotyper, an Auto Spawner's exact copy mode, or an Auto Jukebox
+
+**The patch.** Every machine lookup in the handler goes through `TLiteMFR.packetTile`. It
+returns the machine only when it is within 8 blocks, checked before the lookup, and the sender
+has that machine's GUI open and still usable. That is always true for a stock client, which only
+sends these from the machine's own GUI.
+
+**Verified** with the DSU side packet. Stock applied it from 30 blocks away, from next to the
+DSU with no GUI open, and with another DSU's GUI open. Patched refused all three and still
+applied it for a player with that DSU's GUI open.
 
 </details>
 
@@ -276,31 +312,203 @@ in survival and logged the refusal.
 
 ---
 
+## BuildCraft 3.4.3
+
+<details>
+<summary><b><code>quarry</code>: mine and frame inside claims (protection)</b></summary>
+
+**The bug.** `TileQuarry.positionReached` mines the block under its head, and `buildFrame` has
+its robot place frame blocks, both straight through the world. A Quarry outside a claim with its
+area over the claim digs the claim out. It was banned as able to "bypass claim protections".
+
+**The patch.**
+
+- The Quarry remembers who placed it, saved in its NBT.
+- Each block it would mine goes through `TLiteBC.quarriable`, which adds the owner's
+  [protection check](#how-protection-checks-work) to the stock test.
+- A refused block's column is then treated like bedrock, so the Quarry moves on instead of
+  returning to it.
+- Frame blocks inside a claim are skipped.
+
+**Verified** with a Quarry placed by another player outside a claim, its head sent to a stone
+block inside it. Stock mined it. Patched left it and logged the refusal, and still mined the same
+block on open ground.
+
+</details>
+
+<details>
+<summary><b><code>quarrychunks</code>: a full size Quarry stops but keeps its whole area loaded, and a stray ticket crashes world load</b></summary>
+
+**The bug.** A Quarry keeps its chunks loaded with one Forge chunk ticket, which holds 25 chunks
+here (`forgeChunkLoading.cfg`). When a ticket goes over its limit Forge drops the oldest chunk,
+and the Quarry forces its own chunk first.
+
+- `setBoundaries` lets an area through when `(xSize * zSize) >> 8` is under the limit. A 64x64
+  marker area passes, but can span 5x5 chunks, and with the Quarry's own chunk that is 26.
+- Forge then drops the Quarry's own chunk. The Quarry unloads and stops once nobody is near,
+  and its 25 area chunks stay loaded. The ticket is saved, so this comes back after every restart.
+- When the world loads, BuildCraft's ticket callback calls `forceChunkLoading` on whatever tile
+  entity is at the ticket's quarry position. A quarry block without its tile entity crashes the
+  world load.
+
+**The patch.**
+
+- `setBoundaries` counts the real chunks, the Quarry's own included, and uses the default area
+  when they don't fit the ticket.
+- `forceChunkLoading` forces the Quarry's own chunk again at the end, so Forge drops an area
+  chunk instead. This also fixes Quarries that already have a full ticket.
+- The callback releases a ticket with no quarry behind it instead of crashing.
+
+**Verified** with a Quarry forcing a 64x64 area over 5x5 chunks on a fresh ticket. Stock: the
+ticket held 25 chunks without the Quarry's own. Patched: 25 chunks including it. The callback on
+a ticket pointing at stone: stock threw `NullPointerException`, patched released the ticket.
+
+</details>
+
+<details>
+<summary><b><code>filler</code>: fill, clear and flatten inside claims (protection)</b></summary>
+
+**The bug.** The Filler's patterns place blocks with the item and clear them with
+`setBlockWithNotify` or `BlockUtil.breakBlock`, straight through the world, anywhere its markers
+reach.
+
+**The patch.** The Filler remembers who placed it. Every block a pattern places or clears goes
+through `TLiteBC`, which asks the owner's
+[protection check](#how-protection-checks-work) first. On a refusal the Filler stops as if its
+pattern were done, and rests for 10 seconds before trying again, so Loop mode can't retry every
+tick.
+
+**Verified** with a Filler placed by another player outside a claim, its box on a stone block
+inside it, running the Clear pattern. Stock cleared it. Patched left it, and still cleared the
+same block on open ground.
+
+</details>
+
+---
+
+## ComputerCraft 1.5
+
+<details>
+<summary><b><code>turtle</code>: dig, build, take and move inside claims (protection)</b></summary>
+
+**The bug.** Turtles dig, attack, place, suck items from, drop items into and move into the block
+next to them with no protection check. A turtle outside a claim empties it or drives in. They
+were banned as able to "build in protected areas without permission".
+
+**The patch.**
+
+- Each turtle remembers who placed it, saved in its NBT and carried across moves.
+- `move`, `useTool` (dig and attack with any tool upgrade), `place`, `suck` and `dropQuantity`
+  each start with a [protection check](#how-protection-checks-work) as the owner on the cell they
+  touch.
+- `tryPlaceOnBlock` and `tryPlaceOnEntity` check the cell they reach, since placing can reach
+  two blocks away.
+- A refused action returns false to the program, like hitting bedrock.
+
+**Verified** with a mining turtle placed by another player just outside a claim. Stock dug the
+stone inside the claim and then moved into it. Patched refused both, and the same turtle dug and
+moved on open ground.
+
+</details>
+
+---
+
+## immibis-core 52.4.6 (Tubestuff)
+
+<details>
+<summary><b><code>mergenbt</code>: shift-click copies an item's contents onto every item in the stack</b></summary>
+
+**The bug.** `BasicInventory.mergeStackIntoRange`, which Tubestuff uses for shift-click and the
+Retrievulator, merges stacks by item id and damage and ignores NBT. The destination keeps its own
+tag and takes the whole count. With a Deep Storage Unit holding 1000 items in an ACT Mk II
+(AutoCraft Mk II, 4092:1), shift-clicking 15 empty Deep Storage Units into it gives 16 that each
+hold 1000. This is the exploit the ACT Mk II was banned for. The same works with Mystcraft pages.
+
+**The patch.** Both merge methods now call `TLiteImmibis`, the same logic with the tags required
+to match.
+
+**Verified** with that shift-click. Stock: 16 Deep Storage Units holding 1000 each, 16000 in
+total. Patched: 1 holding 1000 and 15 empty ones in the next slot, 1000 in total.
+
+</details>
+
+---
+
+## IndustrialCraft 2 and RedPower 2 (TLiteFixes coremod)
+
+IC2 and RedPower ship signed jars. Changing a class in a signed jar breaks the mod: the class
+fails its digest, and stripping the signature makes Java refuse the rest of RedPower, whose
+other zips share a package under the original signature. So these fixes are in
+`TLiteFixes-coremod.jar`, a server side coremod that patches the classes as they load and leaves
+the signed jars untouched. It logs `[TLiteFixes] patched <class>` for each one, and refuses to
+patch a class that doesn't match, rather than half patching it.
+
+<details>
+<summary><b><code>laser</code>: IC2 Mining Laser mines and blows up claims (protection)</b></summary>
+
+**The bug.** `EntityMiningLaser` breaks, smelts and ignites the blocks its beam hits, and its
+Explosive mode runs an `ExplosionIC2`, all with no protection check, in every mode. It was banned
+as able to "bypass anti-grief".
+
+**The patch.**
+
+- Before the beam takes a block, `TLiteIC2.canMine` asks the shooter's
+  [protection check](#how-protection-checks-work). A refusal ends the beam, as hitting an
+  unminable block does.
+- In a Mining Laser explosion each block is checked the same way, and a refused one reads as air,
+  so it is neither destroyed nor dropped. Explosions from anything else are left as they were.
+
+**Verified** with a beam straight down onto stone, and an Explosive shot onto a 3x3x3 stone cube,
+inside another player's claim. Stock mined the block and the explosion destroyed 9 of the 27.
+Patched left the block and all 27, and still mined the block and destroyed 9 on open ground.
+
+</details>
+
+<details>
+<summary><b><code>bagdupe</code>: RedPower Canvas Bag number key dupe</b></summary>
+
+**The bug.** The Canvas Bag GUI writes to the held bag's NBT and uses vanilla `slotClick`.
+Hovering an item in the bag and pressing the number key of the bag's own hotbar slot moves the
+item into the hotbar and pushes the bag back into the inventory as a copy made while it still
+held the item. The item is out, and the bag still has it. It was banned as "causes problems".
+
+**The patch.** The bag's container gets a `slotClick` that refuses number key swaps and any
+click on the slot holding the open bag. Neither is needed while the bag is open.
+
+**Verified** with 64 diamonds in a bag. Stock: 128 diamonds after one key press. Patched: 64.
+
+</details>
+
+---
+
 ## Not fixed yet
 
 | What | Status |
 |---|---|
-| Tubestuff ACT Mk II (4092:1) | Banned as "Exploits". The exploit is not identified yet. |
-| MFR machine packets 2 to 10 | Trust the client's coordinates, so a client can change other players' machine settings from anywhere. Settings only, no items. |
-| Claim bypassing machines and tools: Quarry, Filler, Turtles, Mining Laser, Conversion Matrix | Still handled by bans. The same protection check could fix them. |
+| Other IC2 tools: Wrench, Foam Sprayer, Electric Hoe, Treetap, Painter, Cable Cutter, Terraformer | Change blocks with no protection check. GriefPrevention may already stop the right clicks on IC2 blocks. Not checked. |
+| Mining Laser damage | Beams still hurt and set fire to players and mobs anywhere. A PvP matter, not a claim bypass. |
+| Turtles placing vanilla blocks | MCPC+ asks plugins as the player "ComputerCraft" when a turtle places a vanilla block, so an owner's turtle may be refused in their own claim. Not checked. |
+| Pipes, tubes and AE buses reading a chest just inside a claim from outside | A border problem for anything that moves items. No fix. |
 | Balance and lag bans: Nuke, Industrial TNT, alarms, Crystal Chest, chunk loaders | Server policy rather than bugs. Left to config and plugins. |
 | NEI magnet mode | `NEIServer.cfg` gives `magnet` to `ALL`. Magnet pulls dropped items from 16 blocks away through walls, so it can take items off the floor inside a claim. Config: remove `ALL`. |
 | CodeChickenCore 0.7.3, PowerCrystalsCore 1.0.3 | Scanned. Libraries with no player driven world changes. Nothing to fix. |
+| AE Conversion Matrix | Not a bug. It is a crafting material whose only use in the world is the Storage Monitor upgrade, covered by `monitor`. GriefPrevention's container trust list (900 to 902) already stops right clicks on AE blocks. |
 
 ---
 
 ## Plugins
 
-`plugins/` holds the Bukkit plugins the server used before these patches, recovered from
-IntelliJ's local history. They are kept for reference.
+Two Bukkit plugins used to cover these bugs. The patches replace what they did:
 
 | Plugin | What it did | Now |
 |---|---|---|
-| `plugins/TekkitLiteCustomizer` | TekkitCustomizer 1.6 plus `AdjacentBlockDupePatch`, which refused placing a Block Breaker next to a Deep Storage Unit | Replaced by `dsudupe`, which also covers every other way to break a DSU |
-| `plugins/GriefPrevention-TLite` | GriefPrevention 7.6.2 plus claim checks for the Entropy Accelerator, Vibration Catalyst, Minium Stone, Wrath Igniter and ME Storage Monitor | Replaced by `entropy`, `catalyst`, `protect`, `wrathigniter` and `monitor`, which work with stock GriefPrevention |
+| GriefPrevention-TLite | GriefPrevention 7.6.2 plus claim checks for the Entropy Accelerator, Vibration Catalyst, Minium Stone, Wrath Igniter and ME Storage Monitor | Removed. `entropy`, `catalyst`, `protect`, `wrathigniter` and `monitor` do this inside the mods and work with stock GriefPrevention 7.6.2 |
+| TekkitLiteCustomizer | TekkitCustomizer 1.6 item bans plus `AdjacentBlockDupePatch`, which refused placing a Block Breaker next to a Deep Storage Unit | Dupe ban removed, `dsudupe` fixes it inside MFR. The item bans stay |
 
-Each plugin folder has `src/` with the newest recovered source, `version-history/` with every
-recovered version in order, and `decompiled-deployed-jar/` with the jar that ran on the server.
+`plugins/TekkitLiteCustomizer` is the plugin's source, recovered from IntelliJ's local history:
+`src/` is what `build.sh` builds into `TekkitLiteCustomizer.jar`, `version-history/` has every
+recovered version in order, and `decompiled-deployed-jar/` is the jar that ran on the server
+before, dupe ban included.
 
 ---
 
@@ -313,7 +521,8 @@ recovered version in order, and `decompiled-deployed-jar/` with the jar that ran
 ./build.sh
 ```
 
-Needs a Java 8 `javac` for the helper classes, ASM, and the server's `mcpcplus.jar`.
+Builds every patched jar, `TLiteFixes-coremod.jar` and `TekkitLiteCustomizer.jar`. Needs a Java 8 `javac` for the helper
+classes and the plugin, ASM, and the server's `mcpcplus.jar`.
 
 Override paths with `MODS`, `COREMODS`, `MCPC`, `MFR_SRC`, `EE3_SRC`, `AE_SRC`, `FZ_SRC`, `TC_SRC`,
 `NEI_SRC`, `ASM`, `JAVAC8`. `MODS` defaults to the PolyMC Tekkit Lite instance, whose mod jars are identical to
@@ -336,8 +545,8 @@ apply, so it never writes a jar that silently did nothing.
 server with stock or patched jars, runs the scenarios from the console and prints the results:
 
 ```sh
-test/run.sh stock   probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu
-test/run.sh patched probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu
+test/run.sh stock   probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle
+test/run.sh patched probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle
 ```
 
 The protection scenarios claim an area for `Owner` with stock GriefPrevention and act as the
@@ -368,6 +577,9 @@ stock ones:
 | `ee3-universal-pre1f.jar` | `ee3-universal-pre1f-patched.jar` |
 | `appeng-rv9-i.zip` | `appeng-rv9-i-patched.zip` |
 | `Factorization-0.7.21.jar` | `Factorization-0.7.21-patched.jar` |
+| `buildcraft-A-3.4.3.jar` | `buildcraft-A-3.4.3-patched.jar` |
+| `ComputerCraft1.5.zip` | `ComputerCraft1.5-patched.zip` |
+| `immibis-core-52.4.6.jar` | `immibis-core-52.4.6-patched.jar` |
 
 And in the **server's** `coremods/` folder:
 
@@ -375,18 +587,30 @@ And in the **server's** `coremods/` folder:
 |---|---|
 | `[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.CoreMod.jar` | `[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.CoreMod-patched.jar` |
 | `NotEnoughItems 1.4.7.0.jar` | `NotEnoughItems 1.4.7.0-patched.jar` |
+| nothing, it is new | `TLiteFixes-coremod.jar` |
 
 **Clients need no changes.** Every patched method runs on the server: the Unifier's update, the
 DSU's GUI and break checks, EE3's and NEI's packet handlers, TreeCapitator's felling, and the
 tools' item use and the monitor's click, whose results the server decides. The patches do not
-change any mod id or version string, so FML accepts stock clients.
+change any mod id or version string, so FML accepts stock clients. `TLiteFixes-coremod.jar` has
+no mod entry, so clients don't need it.
 
 Not yet checked with a real client connected. The verification above was done by server
 side scenarios.
 
-Once the patched jars are in, the Entropy Accelerator, Vibration Catalyst, Minium Stone and
-Wrath Igniter no longer need to be banned, and `GriefPrevention-TLite` can go back to stock
-GriefPrevention.
+And in the **server's** `plugins/` folder, at the same time as the jars above:
+
+| Replace | With |
+|---|---|
+| `GriefPrevention-TLiteEvents.jar` | stock GriefPrevention 7.6.2. Same version, so `GriefPreventionData` carries over |
+| `TekkitLiteCustomizer.jar` | `TekkitLiteCustomizer.jar` from this repo |
+
+Swap the plugins only together with the patched jars. The old plugin versions are what block
+the claim bypasses and the DSU dupe on stock jars.
+
+Once the patched jars are in, these TekkitCustomizer bans can go: BC Filler (155:0), BC Quarry
+(153:0), Turtles (209, 210), Mining Laser (30208), AutoCraft Mk II (4092:1) and Canvas Bag (9268).
+The Entropy Accelerator, Vibration Catalyst, Minium Stone and Wrath Igniter need no ban either.
 
 </details>
 
@@ -403,4 +627,9 @@ affiliated with or endorsed by any of them.
 | Factorization | neptunepink |
 | TreeCapitator | bspkrs |
 | NotEnoughItems | ChickenBones |
+| BuildCraft | SpaceToad and the BuildCraft team |
+| ComputerCraft | dan200 |
+| Tubestuff, immibis-core | immibis |
+| IndustrialCraft 2 | Alblaka and the IC2 team |
+| RedPower 2 | Eloraam |
 | TekkitCustomizer, GriefPrevention | ryanhamshire (BigScary) |

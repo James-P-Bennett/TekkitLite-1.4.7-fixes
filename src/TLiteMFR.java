@@ -1,3 +1,8 @@
+import java.lang.reflect.Field;
+
+import cpw.mods.fml.common.network.Player;
+
+import powercrystals.minefactoryreloaded.gui.container.ContainerFactoryInventory;
 import powercrystals.minefactoryreloaded.processing.TileEntityDeepStorageUnit;
 import powercrystals.minefactoryreloaded.processing.TileEntityUnifier;
 
@@ -7,9 +12,14 @@ import powercrystals.minefactoryreloaded.processing.TileEntityUnifier;
  * Compiled against the server's mcpcplus.jar, so vanilla classes are used by their obfuscated
  * 1.4.7 names: ur = ItemStack, yc = World, any = TileEntity, and on an IInventory
  * a(int) = getStackInSlot, a(int, ur) = setInventorySlotContents, c() = getInventoryStackLimit;
- * yc.q = getBlockTileEntity, yc.r = removeBlockTileEntity, any.k/l/m/n = worldObj/x/y/z.
+ * yc.q = getBlockTileEntity, yc.r = removeBlockTileEntity, any.k/l/m/n = worldObj/x/y/z;
+ * qx = EntityPlayer, qx.bL = openContainer, rq = Container, rq.a(qx) = canInteractWith,
+ * lq.e(double, double, double) = getDistanceSq.
  */
 public class TLiteMFR {
+
+    /** ContainerFactoryInventory._te, protected in another package. */
+    private static Field containerTile;
 
     /**
      * Replaces the private TileEntityUnifier.moveItemStack(ur) call in updateEntity.
@@ -89,5 +99,46 @@ public class TLiteMFR {
             dsu.setQuantity(0);
         }
         world.r(x, y, z);
+    }
+
+    /**
+     * Replaces every world.getBlockTileEntity(x, y, z) in MFR's ServerPacketHandler.onPacketData,
+     * which reads the machine a GUI button packet is for: Auto Enchanter level, Harvester
+     * settings, Chronotyper, Deep Storage Unit output sides, Auto Jukebox and Auto Spawner.
+     *
+     * Stock trusts the packet's coordinates: any player changes any of these machines anywhere,
+     * for example flipping a DSU face next to their own land to output and piping its items out,
+     * and the lookup itself loads chunks anywhere. The stock client only sends these from the
+     * machine's own GUI, so the machine is now returned only when it is within 8 blocks (checked
+     * before the lookup) and the sender has that machine's GUI open and still usable. Otherwise
+     * this returns null, which every branch's instanceof check skips.
+     */
+    public static any packetTile(yc world, int x, int y, int z, Player sender) {
+        if (world == null || !(sender instanceof qx)) {
+            return null;
+        }
+        qx player = (qx) sender;
+        if (player.e(x + 0.5, y + 0.5, z + 0.5) > 64.0) {
+            TLiteProtect.refused(player, "MFR machine packet at " + x + "," + y + "," + z + " (out of reach)");
+            return null;
+        }
+        try {
+            rq open = player.bL;
+            if (open instanceof ContainerFactoryInventory) {
+                if (containerTile == null) {
+                    Field f = ContainerFactoryInventory.class.getDeclaredField("_te");
+                    f.setAccessible(true);
+                    containerTile = f;
+                }
+                any te = world.q(x, y, z);
+                if (te != null && containerTile.get(open) == te && open.a(player)) {
+                    return te;
+                }
+            }
+        } catch (Throwable t) {
+            // refused below
+        }
+        TLiteProtect.refused(player, "MFR machine packet at " + x + "," + y + "," + z + " (machine GUI not open)");
+        return null;
     }
 }
