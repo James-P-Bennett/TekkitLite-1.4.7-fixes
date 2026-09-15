@@ -28,6 +28,7 @@ Each patch is selectable individually.
 | [Balkon's Weaponmod](#balkons-weaponmod) | `dynamite` |
 | [WR-CBE Wireless Redstone 1.3.2.8](#wr-cbe-wireless-redstone-1328) | `freq` |
 | [Steve's Carts 2.0.0.a62](#steves-carts-2000a62) | `carts` |
+| [AdvancedPowerManagement 1.1.55](#advancedpowermanagement-1155) | `guibutton` |
 
 Bukkit plugins have [their own section](#plugins). The fixes that used to live in plugins are
 now done inside the mods, so they hold no matter which protection plugin the server runs.
@@ -758,6 +759,24 @@ only on open ground.
 
 ---
 
+## AdvancedPowerManagement 1.1.55
+
+<details>
+<summary><b><code>guibutton</code>: toggle any Battery Station's mode from anywhere</b></summary>
+
+**The bug.** The GUI-button packet ran `receiveGuiButton` on the machine at the client's
+coordinates with no reach check, so a player could flip any Battery Station's operating mode or
+an Emitter's packet size from anywhere.
+
+**The patch.** The button goes through `TLiteAPM.guiButton`, which applies it only when the sender
+is within reach of the machine in the same world.
+
+**Verified** on the test server: the call is routed through the reach gate and the mod loads.
+
+</details>
+
+---
+
 ## Not fixed yet
 
 | What | Status |
@@ -767,6 +786,7 @@ only on open ground.
 | Turtles placing vanilla blocks | MCPC+ asks plugins as the player "ComputerCraft" when a turtle places a vanilla block, so an owner's turtle may be refused in their own claim. Not checked. |
 | Pipes, tubes and AE buses reading a chest just inside a claim from outside | A border problem for anything that moves items. No fix. |
 | IC2 Terraformer changing terrain in claims | A placed Terraformer edits blocks in a radius with no owner; like MFFS it would need owner-tracking that its code does not make available cleanly. Recommend a ban or server-policy decision. |
+| AdvancedPowerManagement Battery Station output dupe | `moveOutputItems` increments the output slot when a different empty electric item is discharged into an occupied output, minting the output item. Reachability is uncertain (needs two empty electric-item types positioned just so) and the fix is a fiddly mid-method item-match check; deferred. |
 | MFFS force fields (adv-repulsion) projected into claims | Field blocks reference their projector only by an integer id, and projectors carry no owner, so owner-tracking (as used for the other machines) is impractical without reverse-engineering the projector registry; an ownerless guard would also break force fields around a player's own claimed base. Recommend banning the projectors, or a server-policy decision. |
 | LogisticsPipes Security Station takeover | Packets rewrite any station's settings with no owner check. Needs LP's own owner model worked out to gate safely without locking players out. Deferred. |
 | LogisticsPipes request amount | A request packet's quantity is an unvalidated int; a huge value could drive the crafting tree as a DoS. Clamp needed. Deferred. |

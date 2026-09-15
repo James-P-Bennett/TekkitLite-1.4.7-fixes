@@ -33,6 +33,7 @@ JARS=(
   "Weaponmod.zip|Weaponmod-patched.zip"
   "WR-CBE Core 1.3.2.8.jar|WR-CBE Core 1.3.2.8-patched.jar"
   "StevesCarts2.0.0.a62.zip|StevesCarts2.0.0.a62-patched.zip"
+  "AdvancedPowerManagement-1.1.55-IC2_1.112.jar|AdvancedPowerManagement-1.1.55-IC2_1.112-patched.jar"
   "ComputerCraft1.5.zip|ComputerCraft1.5-patched.zip"
 )
 
