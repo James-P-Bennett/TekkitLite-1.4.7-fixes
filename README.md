@@ -23,8 +23,8 @@ Each patch is selectable individually.
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
 | [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` |
 | [AdditionalPipes 2.1.3](#additionalpipes-213) | `teleowner` · `apchunkgate` |
-| [ChickenChunks 1.3.1.0](#chickenchunks-1310) | `spotloader` |
-| [Dimensional Anchors 52.2.0](#dimensional-anchors-5220) | `spotloader` |
+| [ChickenChunks 1.3.1.0](#chickenchunks-1310) | `spotloader` · `combinedquota` |
+| [Dimensional Anchors 52.2.0](#dimensional-anchors-5220) | `spotloader` · `combinedquota` |
 | [IC2NuclearControl 1.4.6](#ic2nuclearcontrol-146) | `packets` |
 | [OmniTools 3.0.4](#omnitools-304) | `wrench` |
 | [Balkon's Weaponmod](#balkons-weaponmod) | `dynamite` |
@@ -706,13 +706,35 @@ keeps open; ChickenChunks both loads and quota-counts through it. The radius it 
 `getLoadedChunks(cx, cz, radius - 1)`, so 1 means radius 0). The stored radius is left alone, and
 loaders saved before the patch also drop to one chunk on their next activation.
 
-**Per-player count.** With every loader one chunk, the existing per-player chunk quota
-(`ChickenChunks.cfg` `players{ DEFAULT=6 }`) is a per-player spot-loader count: a player who is at
-their limit cannot activate another. `allowoffline{ DEFAULT=false }` already stops a player's
-loaders while they are logged out.
+**Per-player count.** With every loader one chunk, a per-player chunk quota is a per-player
+spot-loader count, and `combinedquota` (below) makes that quota authoritative and shared with the
+Dimensional Anchors. `allowoffline{ DEFAULT=false }` already stops a player's loaders while they are
+logged out.
 
 **Verified** on the test server: a loader set to radius 3 loads 25 chunks on the stock jar and 1
 on the patched jar.
+
+</details>
+
+<details>
+<summary><b><code>combinedquota</code>: one per-player chunk cap shared with the anchors</b></summary>
+
+**Why.** ChickenChunks and Dimensional Anchors each enforce their own per-player quota, so a player
+could load a full ChickenChunks allowance and a separate anchor allowance on top. The goal is one
+authoritative total: no more than N chunks loaded per player across every loader.
+
+**The patch.** `ChunkLoaderManager.addChunkLoader` and `remChunkLoader` route through
+`TLiteChunkQuota`, a shared per-owner set of loaded chunks that the anchor patch feeds too. A loader
+that would take the owner past the limit does not register, so it loads nothing. The limit is the
+owner's ChickenChunks per-player limit (`ChickenChunks.cfg` `players{}`), which stays authoritative,
+unless `config/ChunkLoaderConversion.cfg` sets `chunkloader.maxchunksperplayer` to 0 or more (0
+means no cap). Server-owned and ownerless loaders are not capped. The count is in memory and rebuilt
+as loaders re-register on world load, so a restart heals any drift and every failure mode is a
+conservative under-count.
+
+**Verified** on the test server with the limit forced to 3: one owner's first three ChickenChunks
+claims are allowed, the next two are refused, and a same-owner Dimensional Anchor is refused because
+the three ChickenChunks chunks already fill the shared budget.
 
 </details>
 
@@ -733,12 +755,28 @@ own quota logic, so it applies whether the quota type is unlimited or perplayer.
 radius -1 (no owner, inactive) case is left alone. Anchors saved with a larger radius shrink to one
 chunk the next time they activate.
 
-**Per-player count.** Set `immibis.cfg` `chunkloader.quotaType=perplayer` with
-`chunkloader.perplayer.maxChunksPerPlayer=<n>`; with each anchor one chunk, that is a per-player
-anchor count. An anchor over the limit places but loads nothing.
+**Per-player count.** The anchor's own `immibis.cfg` quota is no longer relied on: `combinedquota`
+(below) counts anchors against the same shared per-player budget as the ChickenChunks loaders, so a
+player's total loaded chunks across both mods cannot exceed the one limit.
 
 **Verified** on the test server: an anchor set to radius 3 loads 49 chunks on the stock jar and 1
 on the patched jar.
+
+</details>
+
+<details>
+<summary><b><code>combinedquota</code>: count anchors against the shared per-player cap</b></summary>
+
+**Why.** So a Dimensional Anchor and a ChickenChunks loader owned by the same player draw from one
+per-player chunk budget rather than two separate ones.
+
+**The patch.** `WorldInfo.addLoader`, `removeLoader` and `delayRemoveLoader` route through
+`TLiteChunkQuota`, the same shared per-owner counter the ChickenChunks patch uses. An anchor that
+would take its owner past the limit does not register and loads nothing. The limit and its config
+override are described under [ChickenChunks `combinedquota`](#chickenchunks-1310).
+
+**Verified** on the test server: with the shared limit filled by ChickenChunks claims, a same-owner
+anchor is refused.
 
 </details>
 

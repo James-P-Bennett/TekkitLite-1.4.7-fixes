@@ -75,6 +75,11 @@ public class TLiteAP {
                 w.write("# 4077) force load chunks. Default false: the loader loads nothing. Teleport\n");
                 w.write("# pipes still move items between chunks that are already loaded.\n");
                 w.write(KEY + "=false\n");
+                w.write("\n");
+                w.write("# Combined per-player chunk-loader limit across ChickenChunks and Dimensional\n");
+                w.write("# Anchors. -1 (default) uses the ChickenChunks per-player limit (ChickenChunks.cfg\n");
+                w.write("# players{}). 0 means no cap. A value of 1 or more overrides it.\n");
+                w.write("chunkloader.maxchunksperplayer=-1\n");
             } finally {
                 w.close();
             }

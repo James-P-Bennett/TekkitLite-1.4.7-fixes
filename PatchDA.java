@@ -7,9 +7,13 @@ import java.util.zip.*;
 /**
  * ChunkLoaderConversion: immibis Dimensional Anchors 52.2.0 patch (part of ChunkLoaderConversion).
  *
- *   spotloader  TileChunkLoader.limitRadius()
- *               clamps the anchor radius to 0 at the top of the method, so a Dimensional Anchor
- *               (block 4090) loads only its own chunk.
+ *   spotloader    TileChunkLoader.limitRadius()
+ *                 clamps the anchor radius to 0 at the top of the method, so a Dimensional Anchor
+ *                 (block 4090) loads only its own chunk.
+ *
+ *   combinedquota WorldInfo.addLoader / removeLoader / delayRemoveLoader
+ *                 routes every register and unregister through TLiteChunkQuota so a player's
+ *                 anchors and ChickenChunks loaders share one per-player chunk cap.
  *
  * limitRadius() runs on every activation: on placement, on world load (validate -> setActive), and
  * after any GUI change (loaderChanged -> setActive). Pinning radius to 0 there makes every anchor a
@@ -20,24 +24,30 @@ import java.util.zip.*;
  * existing radius = -1 (no owner, inactive) case is left alone, since the clamp only lowers a
  * positive radius.
  *
- * usage: PatchDA <in.jar> <out.jar> <patch>[,<patch>...]
+ * usage: PatchDA <in.jar> <out.jar> <patch>[,<patch>...] [<TLiteChunkQuota.class>]
  */
 public class PatchDA {
 
     static final String TILE = "immibis/chunkloader/TileChunkLoader";
+    static final String WORLDINFO = "immibis/chunkloader/WorldInfo";
+    static final String TILEDESC = "(L" + TILE + ";)V";
+    static final String QUOTA = "TLiteChunkQuota";
 
     static boolean doSpot;
     static int spotHits;
+    static boolean doQuota;
+    static int claimHits, releaseHits;
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
-            System.err.println("usage: PatchDA <in.jar> <out.jar> <patches>");
-            System.err.println("patches: spotloader");
+            System.err.println("usage: PatchDA <in.jar> <out.jar> <patches> [TLiteChunkQuota.class]");
+            System.err.println("patches: spotloader, combinedquota");
             System.exit(2);
         }
         for (String p : args[2].split(",")) {
             p = p.trim();
             if (p.equals("spotloader")) doSpot = true;
+            else if (p.equals("combinedquota")) doQuota = true;
             else throw new IllegalArgumentException("unknown patch: " + p);
         }
 
@@ -49,6 +59,7 @@ public class PatchDA {
             byte[] d = readAll(zf.getInputStream(ze));
             String n = ze.getName();
             if (doSpot && n.equals(TILE + ".class")) d = patchSpot(d);
+            if (doQuota && n.equals(WORLDINFO + ".class")) d = patchQuota(d);
             out.put(n, d);
         }
         zf.close();
@@ -59,6 +70,8 @@ public class PatchDA {
 
         if (doSpot && spotHits != 1)
             throw new IllegalStateException("spotloader: expected to patch 1 limitRadius, patched " + spotHits);
+        if (doQuota && (claimHits != 1 || releaseHits != 2))
+            throw new IllegalStateException("combinedquota: expected 1 addLoader and 2 releases, patched " + claimHits + " and " + releaseHits);
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -90,6 +103,38 @@ public class PatchDA {
             pre.add(done);
             m.instructions.insert(pre);
             spotHits++;
+        }
+        return write(cn);
+    }
+
+    /**
+     * In WorldInfo: addLoader(tile) returns before the real add when TLiteChunkQuota.daClaim(tile)
+     * is false (owner at the combined limit); removeLoader(tile) and delayRemoveLoader(tile) each
+     * call TLiteChunkQuota.daRelease(tile) first. The private removeLoader(LoaderInfo) overload has
+     * a different descriptor and is left alone.
+     */
+    static byte[] patchQuota(byte[] in) {
+        ClassNode cn = read(in);
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.desc.equals(TILEDESC)) continue;
+            if (m.name.equals("addLoader")) {
+                InsnList pre = new InsnList();
+                LabelNode cont = new LabelNode();
+                pre.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                pre.add(new MethodInsnNode(Opcodes.INVOKESTATIC, QUOTA, "daClaim", "(Ljava/lang/Object;)Z"));
+                pre.add(new JumpInsnNode(Opcodes.IFNE, cont));
+                pre.add(new InsnNode(Opcodes.RETURN));
+                pre.add(cont);
+                m.instructions.insert(pre);
+                claimHits++;
+            } else if (m.name.equals("removeLoader") || m.name.equals("delayRemoveLoader")) {
+                InsnList pre = new InsnList();
+                pre.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                pre.add(new MethodInsnNode(Opcodes.INVOKESTATIC, QUOTA, "daRelease", "(Ljava/lang/Object;)V"));
+                m.instructions.insert(pre);
+                releaseHits++;
+            }
         }
         return write(cn);
     }

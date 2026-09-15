@@ -84,6 +84,7 @@ import dan200.computer.shared.TileEntityComputer;
  *   tlfix spotloader ChickenChunks Chunk Loader pinned to its own chunk regardless of radius
  *   tlfix da         immibis Dimensional Anchor pinned to its own chunk regardless of radius
  *   tlfix apgate     AdditionalPipes chunk loader off by default (ChunkLoaderConversion config)
+ *   tlfix quota      one combined per-player chunk cap shared by ChickenChunks and anchors
  *
  * The claim is owned by "Owner" and every action is done by the fake player "Intruder", who
  * has no trust in it. Default package so the obfuscated vanilla classes can be named.
@@ -127,6 +128,7 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("spotloader")) spotloader(sender);
             else if (s.equals("da")) da(sender);
             else if (s.equals("apgate")) apgate(sender);
+            else if (s.equals("quota")) quota(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -1031,6 +1033,37 @@ public class TLFixTest extends JavaPlugin {
     private void apgate(CommandSender sender) {
         boolean enabled = TLiteAP.apChunkLoadEnabled();
         sender.sendMessage(TAG + "apgate: AdditionalPipes chunk loader enabled = " + enabled + "  (expect false)");
+    }
+
+    /**
+     * One combined per-player cap: ChickenChunks loaders and Dimensional Anchors draw from the same
+     * budget. Forces the limit to 3 through the config so the count is easy to read, claims five
+     * ChickenChunks loaders for one owner, then a same-owner anchor that must already be over.
+     */
+    private void quota(CommandSender sender) throws Exception {
+        java.io.File cfg = new java.io.File("config/ChunkLoaderConversion.cfg");
+        java.io.FileWriter w = new java.io.FileWriter(cfg);
+        w.write("additionalpipes.chunkloader.enabled=false\nchunkloader.maxchunksperplayer=3\n");
+        w.close();
+
+        final yc wref = world();
+        int allowed = 0;
+        for (int i = 0; i < 5; i++) {
+            final int xi = i * 16;
+            codechicken.chunkloader.IChickenChunkLoader fake = new codechicken.chunkloader.IChickenChunkLoader() {
+                public String getOwner() { return "QuotaTester"; }
+                public Object getMod() { return null; }
+                public yc getWorld() { return wref; }
+                public codechicken.core.BlockCoord getPosition() { return new codechicken.core.BlockCoord(xi, 0, 0); }
+                public void deactivate() { }
+                public java.util.Collection getChunks() { return null; }
+            };
+            if (TLiteChunkQuota.ccClaim(fake)) allowed++;
+        }
+        immibis.chunkloader.TileChunkLoader anchor = new immibis.chunkloader.TileChunkLoader();
+        anchor.owner = "QuotaTester";
+        boolean anchorAllowed = TLiteChunkQuota.daClaim(anchor);
+        sender.sendMessage(TAG + "quota: ChickenChunks claims allowed " + allowed + " of 5, same-owner anchor allowed " + anchorAllowed + "  (expect 3 and false)");
     }
 
     private static int diamonds(iq player) {

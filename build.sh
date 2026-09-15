@@ -65,12 +65,12 @@ mkdir -p build/cls build/tool
 # kills the script with no explanation.
 "$JAVAC8" -nowarn -source 1.6 -target 1.6 \
   -bootclasspath "$(dirname "$JAVAC8")/../jre/lib/rt.jar" \
-  -cp "$MCPC:$MFR_SRC:$PCC:$EE3_SRC:$IC2_SRC:$IMMIBIS_SRC:$RPCORE_SRC:$BC_SRC:$CC_SRC:$TE_SRC:$COFH_SRC:$LP_SRC:$WM_SRC:$WR_SRC:$SC_SRC:$APM_SRC:$CCC:$TC_SRC:$BSPKRS:$NEI_SRC:$CCC" -d build/cls \
-  src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java src/TLiteImmibis.java src/TLiteBC.java src/TLiteTurtle.java src/TLiteCC.java src/TLiteTE.java src/TLiteIronChest.java src/TLiteLP.java src/TLiteNC.java src/TLiteWM.java src/TLiteWR.java src/TLiteSC.java src/TLiteAPM.java src/TLiteMPS.java src/TLiteAP.java 2>&1 \
+  -cp "$MCPC:$MFR_SRC:$PCC:$EE3_SRC:$IC2_SRC:$IMMIBIS_SRC:$RPCORE_SRC:$BC_SRC:$CC_SRC:$TE_SRC:$COFH_SRC:$LP_SRC:$WM_SRC:$WR_SRC:$SC_SRC:$APM_SRC:$CCC:$TC_SRC:$BSPKRS:$NEI_SRC:$CCC:$CHUNKS_SRC" -d build/cls \
+  src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java src/TLiteImmibis.java src/TLiteBC.java src/TLiteTurtle.java src/TLiteCC.java src/TLiteTE.java src/TLiteIronChest.java src/TLiteLP.java src/TLiteNC.java src/TLiteWM.java src/TLiteWR.java src/TLiteSC.java src/TLiteAPM.java src/TLiteMPS.java src/TLiteAP.java src/TLiteChunkQuota.java 2>&1 \
   | grep -vE 'bootstrap class path|source value 1\.6|target value 1\.6|options|unchecked' || true
 
 for f in build/cls/TLiteProtect.class build/cls/TLiteMFR.class build/cls/TLiteEE3.class \
-         build/cls/TLiteTreeCap.class build/cls/TLiteNEI.class build/cls/TLiteImmibis.class build/cls/TLiteBC.class build/cls/TLiteTurtle.class build/cls/TLiteCC.class build/cls/TLiteTE.class build/cls/TLiteIronChest.class build/cls/TLiteLP.class build/cls/TLiteNC.class build/cls/TLiteWM.class build/cls/TLiteWR.class build/cls/TLiteSC.class build/cls/TLiteAPM.class build/cls/TLiteMPS.class build/cls/TLiteAP.class; do
+         build/cls/TLiteTreeCap.class build/cls/TLiteNEI.class build/cls/TLiteImmibis.class build/cls/TLiteBC.class build/cls/TLiteTurtle.class build/cls/TLiteCC.class build/cls/TLiteTE.class build/cls/TLiteIronChest.class build/cls/TLiteLP.class build/cls/TLiteNC.class build/cls/TLiteWM.class build/cls/TLiteWR.class build/cls/TLiteSC.class build/cls/TLiteAPM.class build/cls/TLiteMPS.class build/cls/TLiteAP.class build/cls/TLiteChunkQuota.class; do
   [ -f "$f" ] || { echo "helper class missing after compile: $f" >&2; exit 1; }
 done
 
@@ -130,10 +130,12 @@ patch_one "AdditionalPipes" "$AP_SRC" "AdditionalPipes2.1.3u42-BC3.4.2-MC1.4.7-p
 # per-player chunk quota then acts as a per-player spot-loader count (ChickenChunks.cfg players{},
 # immibis.cfg chunkloader.quotaType=perplayer + maxChunksPerPlayer).
 patch_one "ChickenChunks" "$CHUNKS_SRC" "ChickenChunks 1.3.1.0-patched.jar" \
-          PatchChickenChunks.java "spotloader"
+          PatchChickenChunks.java "spotloader,combinedquota" \
+          build/cls/TLiteChunkQuota.class
 
 patch_one "Dimensional Anchor" "$DA_SRC" "dimensional-anchor-52.2.0-patched.jar" \
-          PatchDA.java "spotloader"
+          PatchDA.java "spotloader,combinedquota" \
+          build/cls/TLiteChunkQuota.class
 
 patch_one "IC2NuclearControl" "$NC_SRC" "IC2NuclearControl-1.4.6-patched.zip" \
           PatchNC.java "packets" \

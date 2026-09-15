@@ -7,9 +7,13 @@ import java.util.zip.*;
 /**
  * ChunkLoaderConversion: ChickenChunks 1.3.1.0 patch (part of ChunkLoaderConversion).
  *
- *   spotloader  TileChunkLoader.getChunks()
- *               forces the radius passed to getContainedChunks to 0, so the adjustable Chunk
- *               Loader (block 2048, metadata 0) loads only its own chunk, like the Spot Loader.
+ *   spotloader    TileChunkLoader.getChunks()
+ *                 forces the radius passed to getContainedChunks to 1, so the adjustable Chunk
+ *                 Loader (block 2048, metadata 0) loads only its own chunk, like the Spot Loader.
+ *
+ *   combinedquota ChunkLoaderManager.addChunkLoader / remChunkLoader
+ *                 routes every register and unregister through TLiteChunkQuota so a player's
+ *                 ChickenChunks and Dimensional Anchor loaders share one per-player chunk cap.
  *
  * A freshly placed Chunk Loader activates at radius 2 and its GUI can grow it further, up to
  * maxchunks (400). getChunks() is the one method that returns the chunks a loader keeps open, and
@@ -23,24 +27,30 @@ import java.util.zip.*;
  * - 1): a square of side 2*(radius-1)+1. So radius 1 is the single centre chunk, and that is the
  * value forced in here (not 0, which would subtract to -1 and load nothing).
  *
- * usage: PatchChickenChunks <in.jar> <out.jar> <patch>[,<patch>...]
+ * usage: PatchChickenChunks <in.jar> <out.jar> <patch>[,<patch>...] [<TLiteChunkQuota.class>]
  */
 public class PatchChickenChunks {
 
     static final String TILE = "codechicken/chunkloader/TileChunkLoader";
+    static final String MANAGER = "codechicken/chunkloader/ChunkLoaderManager";
+    static final String LOADER = "codechicken/chunkloader/IChickenChunkLoader";
+    static final String QUOTA = "TLiteChunkQuota";
 
     static boolean doSpot;
     static int spotHits;
+    static boolean doQuota;
+    static int claimHits, releaseHits;
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
-            System.err.println("usage: PatchChickenChunks <in.jar> <out.jar> <patches>");
-            System.err.println("patches: spotloader");
+            System.err.println("usage: PatchChickenChunks <in.jar> <out.jar> <patches> [TLiteChunkQuota.class]");
+            System.err.println("patches: spotloader, combinedquota");
             System.exit(2);
         }
         for (String p : args[2].split(",")) {
             p = p.trim();
             if (p.equals("spotloader")) doSpot = true;
+            else if (p.equals("combinedquota")) doQuota = true;
             else throw new IllegalArgumentException("unknown patch: " + p);
         }
 
@@ -52,6 +62,7 @@ public class PatchChickenChunks {
             byte[] d = readAll(zf.getInputStream(ze));
             String n = ze.getName();
             if (doSpot && n.equals(TILE + ".class")) d = patchSpot(d);
+            if (doQuota && n.equals(MANAGER + ".class")) d = patchQuota(d);
             out.put(n, d);
         }
         zf.close();
@@ -62,6 +73,8 @@ public class PatchChickenChunks {
 
         if (doSpot && spotHits != 1)
             throw new IllegalStateException("spotloader: expected 1 radius read in getChunks, patched " + spotHits);
+        if (doQuota && (claimHits != 1 || releaseHits != 1))
+            throw new IllegalStateException("combinedquota: expected 1 add and 1 rem, patched " + claimHits + " and " + releaseHits);
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -94,6 +107,37 @@ public class PatchChickenChunks {
                 }
                 m.instructions.set(fi, new InsnNode(Opcodes.ICONST_1));
                 spotHits++;
+            }
+        }
+        return write(cn);
+    }
+
+    /**
+     * addChunkLoader(loader): if TLiteChunkQuota.ccClaim(loader) is false the owner is at the
+     * combined limit, so return before the real add. remChunkLoader(loader): call
+     * TLiteChunkQuota.ccRelease(loader) first, then run the real removal.
+     */
+    static byte[] patchQuota(byte[] in) {
+        ClassNode cn = read(in);
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.desc.equals("(L" + LOADER + ";)V")) continue;
+            if (m.name.equals("addChunkLoader")) {
+                InsnList pre = new InsnList();
+                LabelNode cont = new LabelNode();
+                pre.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                pre.add(new MethodInsnNode(Opcodes.INVOKESTATIC, QUOTA, "ccClaim", "(L" + LOADER + ";)Z"));
+                pre.add(new JumpInsnNode(Opcodes.IFNE, cont));
+                pre.add(new InsnNode(Opcodes.RETURN));
+                pre.add(cont);
+                m.instructions.insert(pre);
+                claimHits++;
+            } else if (m.name.equals("remChunkLoader")) {
+                InsnList pre = new InsnList();
+                pre.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                pre.add(new MethodInsnNode(Opcodes.INVOKESTATIC, QUOTA, "ccRelease", "(L" + LOADER + ";)V"));
+                m.instructions.insert(pre);
+                releaseHits++;
             }
         }
         return write(cn);
