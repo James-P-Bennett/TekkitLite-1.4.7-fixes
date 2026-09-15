@@ -26,8 +26,12 @@ import java.util.zip.*;
  *   packets       ServerPacketHandler.onPacketData
  *                 world.getBlockTileEntity(x, y, z)   (6 calls, one per machine packet)
  *                   -> TLiteMFR.packetTile(world, x, y, z, player)
+ *                 harvesterSettings.put(key, value)   (Harvester settings packet, type 3)
+ *                   -> TLiteMFR.putHarvesterSetting(settings, key, value)
  *
  * GUI button packets trust the client's coordinates, so anyone can change anyone's machines.
+ * The Harvester settings packet also puts any client key into a map written whole to NBT, so a
+ * flood of keys bloats the tile until its chunk fails to save.
  *
  * usage: PatchMFR <in.jar> <out.jar> <patch>[,<patch>...] <TLiteMFR.class> <TLiteProtect.class>
  */
@@ -42,7 +46,7 @@ public class PatchMFR {
     static final String PACKETS = "powercrystals/minefactoryreloaded/net/ServerPacketHandler";
 
     static boolean doUnifier, doDsu, doPackets;
-    static int unifierHits, usableHits, removeHits, packetHits;
+    static int unifierHits, usableHits, removeHits, packetHits, harvestHits;
 
     public static void main(String[] args) throws Exception {
         if (args.length < 4) {
@@ -85,6 +89,8 @@ public class PatchMFR {
             throw new IllegalStateException("dsudupe: expected 1 removeBlockTileEntity call, found " + removeHits);
         if (doPackets && packetHits != 6)
             throw new IllegalStateException("packets: expected 6 getBlockTileEntity calls, found " + packetHits);
+        if (doPackets && harvestHits != 1)
+            throw new IllegalStateException("packets: expected 1 Harvester settings put, found " + harvestHits);
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -171,11 +177,16 @@ public class PatchMFR {
             for (AbstractInsnNode i : m.instructions.toArray()) {
                 if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
                 MethodInsnNode mi = (MethodInsnNode) i;
-                if (!mi.owner.equals("yc") || !mi.name.equals("q") || !mi.desc.equals("(III)Lany;")) continue;
-                m.instructions.insertBefore(mi, new VarInsnNode(Opcodes.ALOAD, 3));
-                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "packetTile",
-                        "(Lyc;IIILcpw/mods/fml/common/network/Player;)Lany;", false));
-                packetHits++;
+                if (mi.owner.equals("yc") && mi.name.equals("q") && mi.desc.equals("(III)Lany;")) {
+                    m.instructions.insertBefore(mi, new VarInsnNode(Opcodes.ALOAD, 3));
+                    m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "packetTile",
+                            "(Lyc;IIILcpw/mods/fml/common/network/Player;)Lany;", false));
+                    packetHits++;
+                } else if (mi.owner.equals("java/util/HashMap") && mi.name.equals("put")) {
+                    m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "putHarvesterSetting",
+                            "(Ljava/util/HashMap;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", false));
+                    harvestHits++;
+                }
             }
             m.maxStack += 1;
         }

@@ -78,6 +78,7 @@ import dan200.computer.shared.TileEntityComputer;
  *   tlfix turtle     ComputerCraft mining turtle outside a claim digging and moving into it
  *   tlfix quarrychunks  BuildCraft Quarry with a 5x5 chunk area keeping its own chunk, and the ticket callback
  *   tlfix ccpacket   ComputerCraft packet guard: drive a computer from afar, from another GUI, and legitimately
+ *   tlfix harvester  MFR Harvester settings packet flooding non-whitelisted keys into its NBT
  *
  * The claim is owned by "Owner" and every action is done by the fake player "Intruder", who
  * has no trust in it. Default package so the obfuscated vanilla classes can be named.
@@ -90,7 +91,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -115,6 +116,7 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("turtle")) turtle(sender);
             else if (s.equals("quarrychunks")) quarrychunks(sender);
             else if (s.equals("ccpacket")) ccpacket(sender);
+            else if (s.equals("harvester")) harvester(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -906,6 +908,46 @@ public class TLFixTest extends JavaPlugin {
         owner.bL = owner.bK;
         w.e(x, y, z, 0);
         w.e(x + 1, y, z, 0);
+    }
+
+    /**
+     * An MFR Harvester (3131:6) with Owner\'s GUI open, sent the settings packet (type 3) with a
+     * real key ("silkTouch") and with junk keys, the way a modified client would flood it. Counts
+     * how many keys end up in the settings map.
+     */
+    private void harvester(CommandSender sender) {
+        yc w = world();
+        int[] p = spot();
+        int x = p[0] + OPEN_OFFSET, y = p[1] + 50, z = p[2];
+        int meta = ((Integer) powercrystals.minefactoryreloaded.MineFactoryReloadedCore.machine0MetadataMappings
+                .get(powercrystals.minefactoryreloaded.MineFactoryReloadedCore.Machine.Harvester)).intValue();
+        w.d(x, y, z, 3120, meta);
+        powercrystals.minefactoryreloaded.plants.TileEntityHarvester te =
+                (powercrystals.minefactoryreloaded.plants.TileEntityHarvester) w.q(x, y, z);
+        iq owner = CraftFakePlayer.get(w, "Owner", true);
+        owner.b(x + 0.5, y + 1.0, z + 1.5);
+        owner.bL = new powercrystals.minefactoryreloaded.gui.container.ContainerHarvester(te, owner.bJ);
+
+        int before = te.getSettings().size();
+        String thrown = "";
+        try {
+            send3(w, owner, x, y, z, "silkTouch", true);
+            for (int i = 0; i < 50; i++) send3(w, owner, x, y, z, "junk" + i, true);
+        } catch (Throwable t) {
+            thrown = ", threw " + t;
+        }
+        sender.sendMessage(TAG + "harvester: settings keys " + before + " -> " + te.getSettings().size()
+                + ", silkTouch=" + te.getSettings().get("silkTouch") + thrown
+                + "  (stock 3 -> 53, fixed stays 3)");
+        owner.bL = owner.bK;
+        w.e(x, y, z, 0);
+    }
+
+    private void send3(yc w, iq player, int x, int y, int z, String key, boolean val) throws Exception {
+        di pkt = powercrystals.core.net.PacketWrapper.createPacket("MFReloaded", 3,
+                new Object[] { x, y, z, key, val });
+        new powercrystals.minefactoryreloaded.net.ServerPacketHandler().onPacketData(null, pkt,
+                (cpw.mods.fml.common.network.Player) (Object) player);
     }
 
     private static int diamonds(iq player) {

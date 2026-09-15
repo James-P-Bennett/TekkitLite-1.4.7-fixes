@@ -141,4 +141,19 @@ public class TLiteMFR {
         TLiteProtect.refused(player, "MFR machine packet at " + x + "," + y + "," + z + " (machine GUI not open)");
         return null;
     }
+
+    /**
+     * Replaces the HashMap.put in MFR's ServerPacketHandler for the Harvester settings packet
+     * (type 3). Stock puts any client-supplied key into the Harvester's live settings map, which
+     * is written whole to NBT, so a modified client at its own Harvester GUI can flood distinct
+     * keys until the tile's chunk grows past the region sector cap and the write is dropped, and
+     * the map bloats RAM in the meantime. Read-back only ever honours the three real keys, so
+     * anything else is dead weight; this drops it.
+     */
+    public static Object putHarvesterSetting(java.util.HashMap settings, Object key, Object value) {
+        if ("silkTouch".equals(key) || "harvestSmallMushrooms".equals(key) || "harvestJungleWood".equals(key)) {
+            return settings.put(key, value);
+        }
+        return null;
+    }
 }

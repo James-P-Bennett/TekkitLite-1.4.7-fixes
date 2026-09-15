@@ -131,15 +131,22 @@ sender has that GUI open, and the lookup loads chunks anywhere. Any player can:
 - lower an Auto Enchanter's level, which finishes the current enchant at once at level 1
 - write any settings key into a Harvester, with no limit on how many
 - toggle a Chronotyper, an Auto Spawner's exact copy mode, or an Auto Jukebox
+- flood a Harvester's settings with any keys the client names. The settings map is written whole
+  to the tile's NBT, so enough distinct keys grow its chunk past the region file's sector limit
+  and the chunk silently fails to save, losing every block and tile in it. This one works even
+  from the machine's own GUI, so the check below does not stop it.
 
 **The patch.** Every machine lookup in the handler goes through `TLiteMFR.packetTile`. It
 returns the machine only when it is within 8 blocks, checked before the lookup, and the sender
 has that machine's GUI open and still usable. That is always true for a stock client, which only
-sends these from the machine's own GUI.
+sends these from the machine's own GUI. The Harvester settings write goes through
+`TLiteMFR.putHarvesterSetting`, which keeps only the three keys the game reads back
+(`silkTouch`, `harvestSmallMushrooms`, `harvestJungleWood`) and drops the rest.
 
 **Verified** with the DSU side packet. Stock applied it from 30 blocks away, from next to the
 DSU with no GUI open, and with another DSU's GUI open. Patched refused all three and still
-applied it for a player with that DSU's GUI open.
+applied it for a player with that DSU's GUI open. And with the Harvester settings packet: stock
+grew the settings from 3 keys to 53, patched kept 3 and still applied the real one.
 
 </details>
 
@@ -511,6 +518,8 @@ click on the slot holding the open bag. Neither is needed while the bag is open.
 | Turtles placing vanilla blocks | MCPC+ asks plugins as the player "ComputerCraft" when a turtle places a vanilla block, so an owner's turtle may be refused in their own claim. Not checked. |
 | Pipes, tubes and AE buses reading a chest just inside a claim from outside | A border problem for anything that moves items. No fix. |
 | ComputerCraft command block peripheral | Off by config (`enableCommandBlock=false`). If enabled, a computer wired to a command block runs op level server commands. Leave it off. |
+| Tubestuff Black Hole Chest | Off by config (`enableBlackHoleChest=false`). If enabled, its unbounded inventory writes to NBT and the same chunk save loss as the Harvester flood applies. Leave it off. |
+| Tampered on-disk NBT crashing one chunk/tile load (Factorization slots, ACT Mk II recipe, immibis chunk loader shape, Mystcraft legacy biome) | Only reachable if the region file is already edited or corrupt, not by a player in game. Left as defensive hardening, not applied. |
 | ComputerCraft `http` API reaching localhost or the LAN | `http.request` has no host filter in 1.5, so a computer can read the server's own admin pages (dynmap, panels) or LAN devices. Config: set `enableAPI_http=false`, or a host filter could block loopback and private ranges. |
 | OpenCCSensors reading nearby players | A sensor reports a player's inventory, armour and position through walls within its tier's radius. Range bounded and inherent to the mod. Server policy. |
 | Balance and lag bans: Nuke, Industrial TNT, alarms, Crystal Chest, chunk loaders | Server policy rather than bugs. Left to config and plugins. |
@@ -569,8 +578,8 @@ apply, so it never writes a jar that silently did nothing.
 server with stock or patched jars, runs the scenarios from the console and prints the results:
 
 ```sh
-test/run.sh stock   probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle ccpacket
-test/run.sh patched probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle ccpacket
+test/run.sh stock   probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle ccpacket harvester
+test/run.sh patched probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle ccpacket harvester
 ```
 
 The protection scenarios claim an area for `Owner` with stock GriefPrevention and act as the
