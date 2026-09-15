@@ -23,6 +23,7 @@ Each patch is selectable individually.
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
 | [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` |
 | [AdditionalPipes 2.1.3](#additionalpipes-213) | `teleowner` |
+| [IC2NuclearControl 1.4.6](#ic2nuclearcontrol-146) | `packets` |
 
 Bukkit plugins have [their own section](#plugins). The fixes that used to live in plugins are
 now done inside the mods, so they hold no matter which protection plugin the server runs.
@@ -604,6 +605,30 @@ pipe is placed. The legitimate frequency packet (id 64) already checks the playe
 alone.
 
 **Verified** in the patched jar: the owner write is removed from the packet handler.
+
+</details>
+
+---
+
+## IC2NuclearControl 1.4.6
+
+<details>
+<summary><b><code>packets</code>: spam alarms and flood an Info Panel's NBT from anywhere</b></summary>
+
+**The bug.** The packet handler read block coordinates from the client and looked up the tile
+with no reach check, then wrote client data into it: an attacker-chosen sound onto any Howler
+Alarm (remote alarm spam) and attacker-named fields into any Info Panel's sensor card, which is
+saved to NBT. From anywhere in the world that let a player spam alarms and bloat a panel's NBT
+until its chunk failed to save, the same chunk-loss as the MFR Harvester flood.
+
+**The patch.** Each lookup goes through `TLiteNC.gate`, which returns the tile only when the
+sender is within reach, so these packets can only touch tiles next to the sender.
+
+**Not fully closed:** a player standing next to another player's Info Panel could still flood
+that one panel's card NBT. Bounding that needs a per-field cap tied to each sensor card's schema,
+left as a documented follow-up.
+
+**Verified** on the test server: the four lookups route through the reach gate and the mod loads.
 
 </details>
 
