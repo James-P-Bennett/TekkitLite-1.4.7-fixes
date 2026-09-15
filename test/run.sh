@@ -28,6 +28,8 @@ JARS=(
   "ironchest-universal-1.4.7-5.1.0.275.zip|ironchest-universal-1.4.7-5.1.0.275-patched.zip"
   "LogisticsPipes-MC1.4.7-0.7.0.96.jar|LogisticsPipes-MC1.4.7-0.7.0.96-patched.jar"
   "AdditionalPipes2.1.3u42-BC3.4.2-MC1.4.7.jar|AdditionalPipes2.1.3u42-BC3.4.2-MC1.4.7-patched.jar"
+  "ChickenChunks 1.3.1.0.jar|ChickenChunks 1.3.1.0-patched.jar"
+  "dimensional-anchor-52.2.0.jar|dimensional-anchor-52.2.0-patched.jar"
   "IC2NuclearControl-1.4.6.zip|IC2NuclearControl-1.4.6-patched.zip"
   "OmniTools-3.0.4.zip|OmniTools-3.0.4-patched.zip"
   "Weaponmod.zip|Weaponmod-patched.zip"

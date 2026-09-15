@@ -22,7 +22,9 @@ Each patch is selectable individually.
 | [ThermalExpansion 2.2.2.2](#thermalexpansion-2222) | `packets` |
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
 | [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` |
-| [AdditionalPipes 2.1.3](#additionalpipes-213) | `teleowner` |
+| [AdditionalPipes 2.1.3](#additionalpipes-213) | `teleowner` · `apchunkgate` |
+| [ChickenChunks 1.3.1.0](#chickenchunks-1310) | `spotloader` |
+| [Dimensional Anchors 52.2.0](#dimensional-anchors-5220) | `spotloader` |
 | [IC2NuclearControl 1.4.6](#ic2nuclearcontrol-146) | `packets` |
 | [OmniTools 3.0.4](#omnitools-304) | `wrench` |
 | [Balkon's Weaponmod](#balkons-weaponmod) | `dynamite` |
@@ -660,6 +662,83 @@ pipe is placed. The legitimate frequency packet (id 64) already checks the playe
 alone.
 
 **Verified** in the patched jar: the owner write is removed from the packet handler.
+
+</details>
+
+<details>
+<summary><b><code>apchunkgate</code>: turn off the AdditionalPipes chunk loader (ChunkLoaderConversion)</b></summary>
+
+**Why.** The AdditionalPipes chunk loader (the "Teleport Tether", block 4077) keeps its area of
+chunks force loaded through a Forge ticket, offline included, and the mod ships no config switch
+for it. It is banned and its recipe is disabled, but a legacy or creative-placed one would still
+load chunks.
+
+**The patch.** The loader tile's tick calls `TLiteAP.apChunkLoadEnabled()` first. When it returns
+false, the tile drops its ticket and returns before requesting a new one, so it loads nothing. The
+flag lives in `config/ChunkLoaderConversion.cfg` (`additionalpipes.chunkloader.enabled`) beside the
+other mod configs and defaults to off; the file is created with the default if it is missing.
+
+**Teleport pipes are not touched.** A teleport pipe removes itself from the network when its chunk
+unloads (`invalidate` and `onChunkUnload` both call `TeleportManager.remove`), so an item sent
+toward a destination in an unloaded chunk finds no target and drops at the source pipe rather than
+teleporting into an unloaded chunk. No extra guard is needed for that case.
+
+**Verified** on the test server: `TLiteAP.apChunkLoadEnabled()` reads false by default, and the
+gate is present at the top of the loader tick in the patched jar.
+
+</details>
+
+---
+
+## ChickenChunks 1.3.1.0
+
+<details>
+<summary><b><code>spotloader</code>: pin every Chunk Loader to its own chunk (ChunkLoaderConversion)</b></summary>
+
+**Why.** ChickenChunks has a single-chunk Spot Loader and an adjustable Chunk Loader (block 2048).
+A placed Chunk Loader activates covering a 3x3 area and its GUI grows it up to `maxchunks` (400 in
+`ChickenChunks.cfg`), so one player can keep a large region loaded. The goal is that every loader
+is a single-chunk spot loader, with the per-player limit deciding how many.
+
+**The patch.** `TileChunkLoader.getChunks()` is the one method that returns the chunks a loader
+keeps open; ChickenChunks both loads and quota-counts through it. The radius it passes to
+`getContainedChunks` is forced to 1, which that method turns into the single centre chunk (it loads
+`getLoadedChunks(cx, cz, radius - 1)`, so 1 means radius 0). The stored radius is left alone, and
+loaders saved before the patch also drop to one chunk on their next activation.
+
+**Per-player count.** With every loader one chunk, the existing per-player chunk quota
+(`ChickenChunks.cfg` `players{ DEFAULT=6 }`) is a per-player spot-loader count: a player who is at
+their limit cannot activate another. `allowoffline{ DEFAULT=false }` already stops a player's
+loaders while they are logged out.
+
+**Verified** on the test server: a loader set to radius 3 loads 25 chunks on the stock jar and 1
+on the patched jar.
+
+</details>
+
+---
+
+## Dimensional Anchors 52.2.0
+
+<details>
+<summary><b><code>spotloader</code>: pin every Dimensional Anchor to its own chunk (ChunkLoaderConversion)</b></summary>
+
+**Why.** The immibis Dimensional Anchor (block 4090) is placed as a single chunk but its GUI grows
+the loaded area (square or line, any radius) up to the player's quota. The goal is the same as for
+ChickenChunks: every anchor loads one chunk, and the per-player quota decides how many.
+
+**The patch.** `TileChunkLoader.limitRadius()` runs on every activation (placement, world load, and
+after any GUI change). A clamp is prepended so a radius above 0 is reset to 0, before the method's
+own quota logic, so it applies whether the quota type is unlimited or perplayer. The existing
+radius -1 (no owner, inactive) case is left alone. Anchors saved with a larger radius shrink to one
+chunk the next time they activate.
+
+**Per-player count.** Set `immibis.cfg` `chunkloader.quotaType=perplayer` with
+`chunkloader.perplayer.maxChunksPerPlayer=<n>`; with each anchor one chunk, that is a per-player
+anchor count. An anchor over the limit places but loads nothing.
+
+**Verified** on the test server: an anchor set to radius 3 loads 49 chunks on the stock jar and 1
+on the patched jar.
 
 </details>
 

@@ -81,6 +81,9 @@ import dan200.computer.shared.TileEntityComputer;
  *   tlfix harvester  MFR Harvester settings packet flooding non-whitelisted keys into its NBT
  *   tlfix te         Thermal Expansion packet gate: retune an Energy Cell from afar, from another GUI, legit
  *   tlfix crystal    IronChest Crystal Chest capped to a few rendered stacks
+ *   tlfix spotloader ChickenChunks Chunk Loader pinned to its own chunk regardless of radius
+ *   tlfix da         immibis Dimensional Anchor pinned to its own chunk regardless of radius
+ *   tlfix apgate     AdditionalPipes chunk loader off by default (ChunkLoaderConversion config)
  *
  * The claim is owned by "Owner" and every action is done by the fake player "Intruder", who
  * has no trust in it. Default package so the obfuscated vanilla classes can be named.
@@ -93,7 +96,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -121,6 +124,9 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("harvester")) harvester(sender);
             else if (s.equals("te")) te(sender);
             else if (s.equals("crystal")) crystal(sender);
+            else if (s.equals("spotloader")) spotloader(sender);
+            else if (s.equals("da")) da(sender);
+            else if (s.equals("apgate")) apgate(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -999,6 +1005,32 @@ public class TLFixTest extends JavaPlugin {
             thrown = "threw " + t;
         }
         sender.sendMessage(TAG + "crystal: rendered stacks " + shown + thrown + "  (stock 5, fixed 3)");
+    }
+
+    /** ChickenChunks Chunk Loader: getChunks() must return one chunk however large the radius. */
+    private void spotloader(CommandSender sender) {
+        codechicken.chunkloader.TileChunkLoader t = new codechicken.chunkloader.TileChunkLoader();
+        t.shape = codechicken.chunkloader.ChunkLoaderShape.Square;
+        t.radius = 3;
+        int n = t.getChunks().size();
+        sender.sendMessage(TAG + "spotloader: ChickenChunks loader at radius 3 loads " + n + " chunk(s)  (stock 25, fixed 1)");
+    }
+
+    /** immibis Dimensional Anchor: limitRadius() must pin it to its own chunk however large the radius. */
+    private void da(CommandSender sender) {
+        immibis.chunkloader.TileChunkLoader t = new immibis.chunkloader.TileChunkLoader();
+        t.owner = "Owner";
+        t.shape = immibis.chunkloader.Shape.SQUARE;
+        t.radius = 3;
+        t.limitRadius();
+        int n = t.getNumChunks();
+        sender.sendMessage(TAG + "da: Dimensional Anchor at radius 3 loads " + n + " chunk(s)  (stock 49, fixed 1)");
+    }
+
+    /** AdditionalPipes chunk loader: the ChunkLoaderConversion config leaves it off by default. */
+    private void apgate(CommandSender sender) {
+        boolean enabled = TLiteAP.apChunkLoadEnabled();
+        sender.sendMessage(TAG + "apgate: AdditionalPipes chunk loader enabled = " + enabled + "  (expect false)");
     }
 
     private static int diamonds(iq player) {
