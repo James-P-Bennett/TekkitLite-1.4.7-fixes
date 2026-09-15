@@ -18,7 +18,7 @@ Each patch is selectable individually.
 | [BuildCraft 3.4.3](#buildcraft-343) | `quarry` · `filler` · `quarrychunks` |
 | [ComputerCraft 1.5](#computercraft-15) | `turtle` · `packets` |
 | [immibis-core 52.4.6](#immibis-core-5246-tubestuff) (Tubestuff) | `mergenbt` |
-| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` · `netevent` |
+| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` · `netevent` · `sorter` |
 | [ThermalExpansion 2.2.2.2](#thermalexpansion-2222) | `packets` |
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
 | [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` |
@@ -568,6 +568,20 @@ unopened Energy-O-Mat, from anywhere on the server and in any dimension.
 tile is in the sender's own world and within reach. Patched at load by the coremod (IC2 is signed).
 
 **Verified** on the test server: the coremod logs `patched ic2.core.network.NetworkManager` and IC2 loads.
+
+</details>
+
+<details>
+<summary><b><code>sorter</code>: RedPower Sorter GUI colour index out of bounds</b></summary>
+
+**The bug.** `ContainerSorter.handleGuiEvent` bounded a colour index with `i <= 8`, but the
+colour array is length 8 (valid 0-7), so a crafted index of 8 threw an uncaught exception in the
+packet handler.
+
+**The patch.** The bound is tightened to `i <= 7`. Patched at load by the coremod.
+
+**Verified** the build-check applies it to the stock class; it loads lazily with the Sorter GUI,
+so it does not appear in the boot log.
 
 </details>
 

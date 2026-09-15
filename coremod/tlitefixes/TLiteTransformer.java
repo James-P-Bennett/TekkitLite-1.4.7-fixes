@@ -14,6 +14,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.IntInsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -57,6 +58,7 @@ public class TLiteTransformer implements IClassTransformer {
     static final String DEPLOYER = "com/eloraam/redpower/machine/TileDeployBase";
     static final String NETMGR = "ic2/core/network/NetworkManager";
     static final String NETLISTENER = "ic2/api/network/INetworkClientTileEntityEventListener";
+    static final String SORTER = "com/eloraam/redpower/machine/ContainerSorter";
 
     public byte[] transform(String name, byte[] bytes) {
         if (name == null || bytes == null) {
@@ -65,7 +67,8 @@ public class TLiteTransformer implements IClassTransformer {
         String internal = name.replace('.', '/');
         if (!internal.equals(LASER) && !internal.equals(EXPLOSION) && !internal.equals(BAG)
                 && !internal.equals(COREPROXY) && !internal.equals(BREAKER) && !internal.equals(IGNITER)
-                && !internal.equals(TILEMACHINE) && !internal.equals(DEPLOYER) && !internal.equals(NETMGR)) {
+                && !internal.equals(TILEMACHINE) && !internal.equals(DEPLOYER) && !internal.equals(NETMGR)
+                && !internal.equals(SORTER)) {
             return bytes;
         }
         try {
@@ -94,6 +97,7 @@ public class TLiteTransformer implements IClassTransformer {
         else if (internal.equals(TILEMACHINE)) ok = patchTileMachine(cn);
         else if (internal.equals(DEPLOYER)) ok = patchDeployer(cn);
         else if (internal.equals(NETMGR)) ok = patchNetworkManager(cn);
+        else if (internal.equals(SORTER)) ok = patchSorter(cn);
         else ok = patchBag(cn);
         if (!ok) {
             return null;
@@ -346,6 +350,28 @@ public class TLiteTransformer implements IClassTransformer {
     }
 
     /**
+     * ContainerSorter.handleGuiEvent bounds a colour index with i <= 8, but colors is length 8
+     * (valid 0-7), so index 8 threw. The bound is tightened to i <= 7.
+     */
+    static boolean patchSorter(ClassNode cn) {
+        int hits = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("handleGuiEvent")) continue;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.BIPUSH || ((IntInsnNode) i).operand != 8) continue;
+                AbstractInsnNode next = i.getNext();
+                while (next != null && (next.getType() == AbstractInsnNode.LABEL || next.getType() == AbstractInsnNode.LINE
+                        || next.getType() == AbstractInsnNode.FRAME)) next = next.getNext();
+                if (next == null || next.getOpcode() != Opcodes.IF_ICMPLE) continue;
+                ((IntInsnNode) i).operand = 7;
+                hits++;
+            }
+        }
+        return hits == 1;
+    }
+
+    /**
      * NetworkManager.onPacketData case 3 dispatched a tile network event looked up across every
      * dimension from client coordinates. The dispatch is routed through a gate that runs it only
      * for a tile in the sender's own world within reach.
@@ -376,7 +402,7 @@ public class TLiteTransformer implements IClassTransformer {
             System.err.println("usage: TLiteTransformer <ic2.jar> <RedPowerCore.zip> <RedPowerMechanical.zip>");
             System.exit(2);
         }
-        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER }, { args[0], NETMGR } };
+        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER }, { args[0], NETMGR }, { args[2], SORTER } };
         boolean failed = false;
         for (String[] check : checks) {
             ZipFile zf = new ZipFile(check[0]);
