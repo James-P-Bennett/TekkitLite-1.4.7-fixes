@@ -24,6 +24,7 @@ Each patch is selectable individually.
 | [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` |
 | [AdditionalPipes 2.1.3](#additionalpipes-213) | `teleowner` |
 | [IC2NuclearControl 1.4.6](#ic2nuclearcontrol-146) | `packets` |
+| [OmniTools 3.0.4](#omnitools-304) | `wrench` |
 
 Bukkit plugins have [their own section](#plugins). The fixes that used to live in plugins are
 now done inside the mods, so they hold no matter which protection plugin the server runs.
@@ -629,6 +630,26 @@ that one panel's card NBT. Bounding that needs a per-field cap tied to each sens
 left as a documented follow-up.
 
 **Verified** on the test server: the four lookups route through the reach gate and the mod loads.
+
+</details>
+
+---
+
+## OmniTools 3.0.4
+
+<details>
+<summary><b><code>wrench</code>: the OmniWrench removes machines inside claims (protection)</b></summary>
+
+**The bug.** `ItemWrench.onItemUseFirst` removes an `IWrenchable` machine (sets it to air and
+drops it) and rotates vanilla blocks straight through the world. Whether GriefPrevention's
+interact handler stops it depends on config, so a player could pop machines out of another
+player's claim.
+
+**The patch.** The click starts with a [`TLiteProtect`](#how-protection-checks-work) check for the
+player, the same as a hand break, and does nothing when refused. The player is online, so this
+uses their real build permission: their own claim is fine, someone else's is refused.
+
+**Verified** on the test server: the guard is injected and OmniTools loads.
 
 </details>
 

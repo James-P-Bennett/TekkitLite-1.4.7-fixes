@@ -29,6 +29,7 @@ JARS=(
   "LogisticsPipes-MC1.4.7-0.7.0.96.jar|LogisticsPipes-MC1.4.7-0.7.0.96-patched.jar"
   "AdditionalPipes2.1.3u42-BC3.4.2-MC1.4.7.jar|AdditionalPipes2.1.3u42-BC3.4.2-MC1.4.7-patched.jar"
   "IC2NuclearControl-1.4.6.zip|IC2NuclearControl-1.4.6-patched.zip"
+  "OmniTools-3.0.4.zip|OmniTools-3.0.4-patched.zip"
   "ComputerCraft1.5.zip|ComputerCraft1.5-patched.zip"
 )
 
