@@ -29,6 +29,8 @@ Each patch is selectable individually.
 | [WR-CBE Wireless Redstone 1.3.2.8](#wr-cbe-wireless-redstone-1328) | `freq` |
 | [Steve's Carts 2.0.0.a62](#steves-carts-2000a62) | `carts` |
 | [AdvancedPowerManagement 1.1.55](#advancedpowermanagement-1155) | `guibutton` |
+| [Modular Powersuits 0.7](#modular-powersuits-07) | `tweak` |
+| [Mystcraft 0.10.1](#mystcraft-0101) | `linknull` |
 
 Bukkit plugins have [their own section](#plugins). The fixes that used to live in plugins are
 now done inside the mods, so they hold no matter which protection plugin the server runs.
@@ -772,6 +774,41 @@ an Emitter's packet size from anywhere.
 is within reach of the machine in the same world.
 
 **Verified** on the test server: the call is routed through the reach gate and the mod loads.
+
+</details>
+
+---
+
+## Modular Powersuits 0.7
+
+<details>
+<summary><b><code>tweak</code>: crash the server every tick with a crafted tinker packet</b></summary>
+
+**The bug.** The tinker "tweak" packet wrote a client-named key into a module's NBT as a double.
+Sending a reserved key such as `Active`, which the module tick reads as a boolean, made every
+server tick throw a `ClassCastException`.
+
+**The patch.** The write goes through `TLiteMPS.tweak`, which rejects the reserved keys.
+
+**Verified** on the test server: the write is routed through the guard and the mod loads. (The
+separate bad-item-slot NPE in the same packet family is a one-shot handler error, not fixed.)
+
+</details>
+
+---
+
+## Mystcraft 0.10.1
+
+<details>
+<summary><b><code>linknull</code>: a link book to a bad dimension crashes the link</b></summary>
+
+**The bug.** `LinkController.travelEntity` fetched the destination world, logged if it was null,
+but did not stop, then dereferenced the null world. A link book carrying a bad or removed
+dimension id crashed the link server-side.
+
+**The patch.** `travelEntity` returns as soon as the destination world is null.
+
+**Verified** on the test server: the null-world return is injected and Mystcraft loads.
 
 </details>
 
