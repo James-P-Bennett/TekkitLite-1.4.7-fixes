@@ -23,6 +23,7 @@ FZ_SRC="${FZ_SRC:-$MODS/Factorization-0.7.21.jar}"
 IC2_SRC="${IC2_SRC:-$MODS/industrialcraft-2_1.115.231-lf.jar}"
 IMMIBIS_SRC="${IMMIBIS_SRC:-$MODS/immibis-core-52.4.6.jar}"
 RPCORE_SRC="${RPCORE_SRC:-$MODS/RedPowerCore-2.0pr6.zip}"
+RPMECH_SRC="${RPMECH_SRC:-$MODS/RedPowerMechanical-2.0pr6.zip}"
 BC_SRC="${BC_SRC:-$MODS/buildcraft-A-3.4.3.jar}"
 CC_SRC="${CC_SRC:-$MODS/ComputerCraft1.5.zip}"
 TE_SRC="${TE_SRC:-$MODS/ThermalExpansion-2.2.2.2.zip}"
@@ -153,9 +154,9 @@ mkdir -p build/coremod
 "$JAVAC8" -nowarn -source 1.6 -target 1.6 \
   -bootclasspath "$(dirname "$JAVAC8")/../jre/lib/rt.jar" \
   -cp "$MCPC:$ASM4:$IC2_SRC:$RPCORE_SRC" -d build/coremod \
-  coremod/tlitefixes/*.java src/TLiteProtect.java src/TLiteIC2.java src/TLiteRP.java 2>&1 \
+  coremod/tlitefixes/*.java src/TLiteProtect.java src/TLiteIC2.java src/TLiteRP.java src/TLiteRPMachine.java 2>&1 \
   | grep -vE 'bootstrap class path|source value 1\.6|target value 1\.6|options|unchecked' || true
-java -cp "$ASM4:$MCPC:build/coremod" tlitefixes.TLiteTransformer "$IC2_SRC" "$RPCORE_SRC"
+java -cp "$ASM4:$MCPC:build/coremod" tlitefixes.TLiteTransformer "$IC2_SRC" "$RPCORE_SRC" "$RPMECH_SRC"
 printf 'Manifest-Version: 1.0\nFMLCorePlugin: tlitefixes.TLiteCorePlugin\n' > build/coremod.mf
 rm -f TLiteFixes-coremod.jar
 "$(dirname "$JAVAC8")/jar" cfm TLiteFixes-coremod.jar build/coremod.mf -C build/coremod .

@@ -51,6 +51,8 @@ public class TLiteTransformer implements IClassTransformer {
     static final String BAG = "com/eloraam/redpower/base/ContainerBag";
     static final String CLICK = "(IIILqx;)Lur;";
     static final String COREPROXY = "com/eloraam/redpower/core/CoreProxy";
+    static final String BREAKER = "com/eloraam/redpower/machine/TileBreaker";
+    static final String IGNITER = "com/eloraam/redpower/machine/TileIgniter";
 
     public byte[] transform(String name, byte[] bytes) {
         if (name == null || bytes == null) {
@@ -58,7 +60,7 @@ public class TLiteTransformer implements IClassTransformer {
         }
         String internal = name.replace('.', '/');
         if (!internal.equals(LASER) && !internal.equals(EXPLOSION) && !internal.equals(BAG)
-                && !internal.equals(COREPROXY)) {
+                && !internal.equals(COREPROXY) && !internal.equals(BREAKER) && !internal.equals(IGNITER)) {
             return bytes;
         }
         try {
@@ -82,6 +84,8 @@ public class TLiteTransformer implements IClassTransformer {
         if (internal.equals(LASER)) ok = patchLaser(cn);
         else if (internal.equals(EXPLOSION)) ok = patchExplosion(cn);
         else if (internal.equals(COREPROXY)) ok = patchCoreProxy(cn);
+        else if (internal.equals(BREAKER)) ok = patchBreaker(cn);
+        else if (internal.equals(IGNITER)) ok = patchIgniter(cn);
         else ok = patchBag(cn);
         if (!ok) {
             return null;
@@ -209,15 +213,60 @@ public class TLiteTransformer implements IClassTransformer {
     }
 
     /**
-     * Build check: TLiteTransformer <ic2.jar> <RedPowerCore.zip>. Patches the classes from
-     * the stock jars and exits non zero unless every one applies.
+     * The Block Breaker breaks the block in front through the world; its single
+     * setBlockWithNotify is routed through a fake-player claim guard.
+     */
+    static boolean patchBreaker(ClassNode cn) {
+        int hits = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("onBlockNeighborChange")) continue;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
+                MethodInsnNode mi = (MethodInsnNode) i;
+                if (!mi.owner.equals("yc") || !mi.name.equals("e") || !mi.desc.equals("(IIII)Z")) continue;
+                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", "breakIfAllowed", "(Lyc;IIII)Z"));
+                hits++;
+            }
+        }
+        return hits == 1;
+    }
+
+    /**
+     * The Igniter lights fire against the block in front. fireAction has two setBlockWithNotify
+     * calls: setting fire (block id pushed via GETFIELD) and removing it (id pushed as ICONST_0).
+     * Only the fire-set is routed through the claim guard; removing stray fire is left alone.
+     */
+    static boolean patchIgniter(ClassNode cn) {
+        int hits = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("fireAction")) continue;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
+                MethodInsnNode mi = (MethodInsnNode) i;
+                if (!mi.owner.equals("yc") || !mi.name.equals("e") || !mi.desc.equals("(IIII)Z")) continue;
+                AbstractInsnNode prev = mi.getPrevious();
+                while (prev != null && (prev.getType() == AbstractInsnNode.LABEL || prev.getType() == AbstractInsnNode.LINE
+                        || prev.getType() == AbstractInsnNode.FRAME)) prev = prev.getPrevious();
+                if (prev != null && prev.getOpcode() == Opcodes.ICONST_0) continue;   // fire removal, leave it
+                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", "igniteIfAllowed", "(Lyc;IIII)Z"));
+                hits++;
+            }
+        }
+        return hits == 1;
+    }
+
+    /**
+     * Build check: TLiteTransformer <ic2.jar> <RedPowerCore.zip> <RedPowerMechanical.zip>. Patches
+     * the classes from the stock jars and exits non zero unless every one applies.
      */
     public static void main(String[] args) throws IOException {
-        if (args.length < 2) {
-            System.err.println("usage: TLiteTransformer <ic2.jar> <RedPowerCore.zip>");
+        if (args.length < 3) {
+            System.err.println("usage: TLiteTransformer <ic2.jar> <RedPowerCore.zip> <RedPowerMechanical.zip>");
             System.exit(2);
         }
-        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG }, { args[1], COREPROXY } };
+        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER } };
         boolean failed = false;
         for (String[] check : checks) {
             ZipFile zf = new ZipFile(check[0]);
