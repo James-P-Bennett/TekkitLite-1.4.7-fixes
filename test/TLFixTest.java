@@ -79,6 +79,8 @@ import dan200.computer.shared.TileEntityComputer;
  *   tlfix quarrychunks  BuildCraft Quarry with a 5x5 chunk area keeping its own chunk, and the ticket callback
  *   tlfix ccpacket   ComputerCraft packet guard: drive a computer from afar, from another GUI, and legitimately
  *   tlfix harvester  MFR Harvester settings packet flooding non-whitelisted keys into its NBT
+ *   tlfix te         Thermal Expansion packet gate: retune an Energy Cell from afar, from another GUI, legit
+ *   tlfix crystal    IronChest Crystal Chest capped to a few rendered stacks
  *
  * The claim is owned by "Owner" and every action is done by the fake player "Intruder", who
  * has no trust in it. Default package so the obfuscated vanilla classes can be named.
@@ -91,7 +93,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -117,6 +119,8 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("quarrychunks")) quarrychunks(sender);
             else if (s.equals("ccpacket")) ccpacket(sender);
             else if (s.equals("harvester")) harvester(sender);
+            else if (s.equals("te")) te(sender);
+            else if (s.equals("crystal")) crystal(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -948,6 +952,53 @@ public class TLFixTest extends JavaPlugin {
                 new Object[] { x, y, z, key, val });
         new powercrystals.minefactoryreloaded.net.ServerPacketHandler().onPacketData(null, pkt,
                 (cpw.mods.fml.common.network.Player) (Object) player);
+    }
+
+    private void te(CommandSender sender) {
+        yc w = world();
+        int[] p = spot();
+        int x = p[0] + OPEN_OFFSET, y = p[1] + 55, z = p[2];
+        boolean okA = false, okB = false;
+        for (int meta = 0; meta < 4 && !okA; meta++) { w.d(x, y, z, 2005, meta); okA = w.q(x, y, z) instanceof thermalexpansion.energy.tileentity.TileEnergyCell; }
+        for (int meta = 0; meta < 4 && !okB; meta++) { w.d(x + 1, y, z, 2005, meta); okB = w.q(x + 1, y, z) instanceof thermalexpansion.energy.tileentity.TileEnergyCell; }
+        any a = w.q(x, y, z), b = w.q(x + 1, y, z);
+        if (!(a instanceof thermalexpansion.energy.tileentity.TileEnergyCell)) {
+            sender.sendMessage(TAG + "te: no Energy Cell tile (got " + a + ")");
+            w.e(x, y, z, 0); w.e(x + 1, y, z, 0); return;
+        }
+        iq intruder = intruder(w); intruder.b(x + 0.5, y + 1.0, z + 1.5);
+        iq owner = CraftFakePlayer.get(w, "Owner", true); owner.b(x + 0.5, y + 1.0, z + 1.5);
+        thermalexpansion.core.network.PacketTile pkt = new thermalexpansion.core.network.PacketTile(0, x, y, z, null);
+        intruder.bL = intruder.bK;
+        boolean afar = TLiteTE.gateTarget(pkt, w, intruder) != null;
+        intruder.bL = new thermalexpansion.energy.gui.ContainerEnergyCell(intruder.bJ, b);
+        boolean wrongGui = TLiteTE.gateTarget(pkt, w, intruder) != null;
+        owner.bL = new thermalexpansion.energy.gui.ContainerEnergyCell(owner.bJ, a);
+        boolean legit = TLiteTE.gateTarget(pkt, w, owner) != null;
+        sender.sendMessage(TAG + "te: retune from afar allowed=" + afar + ", from another cell's GUI allowed=" + wrongGui
+                + ", with the cell's own GUI allowed=" + legit + "  (expect false, false, true)");
+        intruder.bL = intruder.bK; owner.bL = owner.bK;
+        w.e(x, y, z, 0); w.e(x + 1, y, z, 0);
+    }
+
+    private void crystal(CommandSender sender) {
+        yc w = world();
+        cpw.mods.ironchest.TileEntityCrystalChest chest = new cpw.mods.ironchest.TileEntityCrystalChest();
+        int[] ids = { 1, 4, 20, 3, 5 };
+        for (int i = 0; i < ids.length; i++) chest.a(i, new ur(ids[i], 1, 0));
+        String thrown = "";
+        int shown = -1;
+        try {
+            java.lang.reflect.Method sort = cpw.mods.ironchest.TileEntityIronChest.class.getDeclaredMethod("sortTopStacks");
+            sort.setAccessible(true);
+            sort.invoke(chest);
+            ur[] top = chest.getTopItemStacks();
+            shown = 0;
+            for (ur u : top) if (u != null) shown++;
+        } catch (Throwable t) {
+            thrown = "threw " + t;
+        }
+        sender.sendMessage(TAG + "crystal: rendered stacks " + shown + thrown + "  (stock 5, fixed 3)");
     }
 
     private static int diamonds(iq player) {

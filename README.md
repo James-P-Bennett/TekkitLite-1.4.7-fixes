@@ -19,6 +19,8 @@ Each patch is selectable individually.
 | [ComputerCraft 1.5](#computercraft-15) | `turtle` · `packets` |
 | [immibis-core 52.4.6](#immibis-core-5246-tubestuff) (Tubestuff) | `mergenbt` |
 | [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` |
+| [ThermalExpansion 2.2.2.2](#thermalexpansion-2222) | `packets` |
+| [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
 
 Bukkit plugins have [their own section](#plugins). The fixes that used to live in plugins are
 now done inside the mods, so they hold no matter which protection plugin the server runs.
@@ -509,6 +511,46 @@ click on the slot holding the open bag. Neither is needed while the bag is open.
 
 ---
 
+## ThermalExpansion 2.2.2.2
+
+<details>
+<summary><b><code>packets</code>: set any Energy Cell's charge, hijack a Tesseract, reconfigure any machine from anywhere</b></summary>
+
+**The bug.** TE's packet handler looks up the tile at the packet's coordinates and runs the
+packet on it with no owner, reach or open-GUI check, the same class as the MFR/NEI/CC packet
+bugs. A modified client can set any Energy Cell or Engine's stored energy (energy from nothing),
+retune or take over any Tesseract and pull another player's items, energy and liquid through it,
+and scramble any machine's I/O faces, from anywhere.
+
+**The patch.** The handler's tile lookup goes through `TLiteTE.gateTarget`, which returns the
+tile only when the sender has that exact tile's TE container open and within reach. The Energy
+Cell and Engine apply a packet's stored-energy value only on the client, so a player cannot fill
+their own cell either. Public/private Tesseract channels and normal same-frequency routing are
+untouched, since configuring a Tesseract happens in its own GUI.
+
+**Verified** with an Energy Cell. Retuning it was refused from afar and from another cell's GUI,
+and allowed only with that cell's own GUI open.
+
+</details>
+
+---
+
+## IronChest 5.1.0.275
+
+<details>
+<summary><b><code>crystalcap</code>: cap how many items a Crystal Chest renders</b></summary>
+
+**Why.** The Crystal Chest is the only transparent chest, so it renders its contents as items
+floating in the block, up to eight per chest. A base with many of them is a lot of rotating
+items for clients to draw. This caps each Crystal Chest to its three most common stacks. Only
+crystal chests render items, so no other chest is affected, and nothing about storage changes.
+
+**Verified** with a chest holding five item types: it renders three.
+
+</details>
+
+---
+
 ## Not fixed yet
 
 | What | Status |
@@ -522,8 +564,7 @@ click on the slot holding the open bag. Neither is needed while the bag is open.
 | Tampered on-disk NBT crashing one chunk/tile load (Factorization slots, ACT Mk II recipe, immibis chunk loader shape, Mystcraft legacy biome) | Only reachable if the region file is already edited or corrupt, not by a player in game. Left as defensive hardening, not applied. |
 | ComputerCraft `http` API reaching localhost or the LAN | `http.request` has no host filter in 1.5, so a computer can read the server's own admin pages (dynmap, panels) or LAN devices. Config: set `enableAPI_http=false`, or a host filter could block loopback and private ranges. |
 | OpenCCSensors reading nearby players | A sensor reports a player's inventory, armour and position through walls within its tier's radius. Range bounded and inherent to the mod. Server policy. |
-| Balance and lag bans: Nuke, Industrial TNT, alarms, Crystal Chest, chunk loaders | Server policy rather than bugs. Left to config and plugins. |
-| NEI magnet mode | `NEIServer.cfg` gives `magnet` to `ALL`. Magnet pulls dropped items from 16 blocks away through walls, so it can take items off the floor inside a claim. Config: remove `ALL`. |
+| Balance and lag bans: Nuke, Industrial TNT, alarms, chunk loaders | Server policy rather than bugs. Left to config and plugins. |
 | CodeChickenCore 0.7.3, PowerCrystalsCore 1.0.3 | Scanned. Libraries with no player driven world changes. Nothing to fix. |
 | AE Conversion Matrix | Not a bug. It is a crafting material whose only use in the world is the Storage Monitor upgrade, covered by `monitor`. GriefPrevention's container trust list (900 to 902) already stops right clicks on AE blocks. |
 

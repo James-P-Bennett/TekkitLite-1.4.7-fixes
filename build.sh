@@ -4,7 +4,7 @@
 #   ./build.sh                 build all mods found at the default paths
 #
 # Override any path with an env var:
-#   MODS  COREMODS  MCPC  MFR_SRC  EE3_SRC  AE_SRC  FZ_SRC  IC2_SRC  IMMIBIS_SRC  RPCORE_SRC  BC_SRC  CC_SRC  TC_SRC  NEI_SRC  ASM  JAVAC8
+#   MODS  COREMODS  MCPC  MFR_SRC  EE3_SRC  AE_SRC  FZ_SRC  IC2_SRC  IMMIBIS_SRC  RPCORE_SRC  BC_SRC  CC_SRC  TE_SRC  COFH_SRC  IRONCHEST_SRC  TC_SRC  NEI_SRC  ASM  JAVAC8
 #
 # Helper classes are compiled against the server's mcpcplus.jar, which holds the whole
 # obfuscated 1.4.7 game plus Forge and Bukkit, and against the mod jars they call into.
@@ -25,6 +25,9 @@ IMMIBIS_SRC="${IMMIBIS_SRC:-$MODS/immibis-core-52.4.6.jar}"
 RPCORE_SRC="${RPCORE_SRC:-$MODS/RedPowerCore-2.0pr6.zip}"
 BC_SRC="${BC_SRC:-$MODS/buildcraft-A-3.4.3.jar}"
 CC_SRC="${CC_SRC:-$MODS/ComputerCraft1.5.zip}"
+TE_SRC="${TE_SRC:-$MODS/ThermalExpansion-2.2.2.2.zip}"
+COFH_SRC="${COFH_SRC:-$MODS/CoFHCore-1.4.7.3.zip}"
+IRONCHEST_SRC="${IRONCHEST_SRC:-$MODS/ironchest-universal-1.4.7-5.1.0.275.zip}"
 PCC="${PCC:-$COREMODS/PowerCrystalsCore-1.0.3-34.jar}"
 TC_SRC="${TC_SRC:-$COREMODS/[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.CoreMod.jar}"
 NEI_SRC="${NEI_SRC:-$COREMODS/NotEnoughItems 1.4.7.0.jar}"
@@ -37,7 +40,7 @@ JAVAC8="${JAVAC8:-/usr/lib/jvm/java-8-openjdk/bin/javac}"
 [ -f "$ASM" ]    || { echo "ASM not found at $ASM, set ASM=..." >&2; exit 1; }
 [ -x "$JAVAC8" ] || { echo "Java 8 javac not found at $JAVAC8, set JAVAC8=..." >&2; exit 1; }
 [ -f "$MCPC" ]   || { echo "mcpcplus.jar not found at $MCPC, copy it from the server or set MCPC=..." >&2; exit 1; }
-for j in "$MFR_SRC" "$EE3_SRC" "$AE_SRC" "$FZ_SRC" "$PCC" "$IC2_SRC" "$IMMIBIS_SRC" "$RPCORE_SRC" "$BC_SRC" "$CC_SRC" "$TC_SRC" "$NEI_SRC" "$CCC" "$BSPKRS"; do
+for j in "$MFR_SRC" "$EE3_SRC" "$AE_SRC" "$FZ_SRC" "$PCC" "$IC2_SRC" "$IMMIBIS_SRC" "$RPCORE_SRC" "$BC_SRC" "$CC_SRC" "$TE_SRC" "$COFH_SRC" "$IRONCHEST_SRC" "$TC_SRC" "$NEI_SRC" "$CCC" "$BSPKRS"; do
   [ -f "$j" ] || { echo "not found: $j" >&2; exit 1; }
 done
 
@@ -49,12 +52,12 @@ mkdir -p build/cls build/tool
 # kills the script with no explanation.
 "$JAVAC8" -nowarn -source 1.6 -target 1.6 \
   -bootclasspath "$(dirname "$JAVAC8")/../jre/lib/rt.jar" \
-  -cp "$MCPC:$MFR_SRC:$PCC:$EE3_SRC:$IC2_SRC:$IMMIBIS_SRC:$RPCORE_SRC:$BC_SRC:$CC_SRC:$TC_SRC:$BSPKRS:$NEI_SRC:$CCC" -d build/cls \
-  src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java src/TLiteImmibis.java src/TLiteBC.java src/TLiteTurtle.java src/TLiteCC.java 2>&1 \
+  -cp "$MCPC:$MFR_SRC:$PCC:$EE3_SRC:$IC2_SRC:$IMMIBIS_SRC:$RPCORE_SRC:$BC_SRC:$CC_SRC:$TE_SRC:$COFH_SRC:$TC_SRC:$BSPKRS:$NEI_SRC:$CCC" -d build/cls \
+  src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java src/TLiteImmibis.java src/TLiteBC.java src/TLiteTurtle.java src/TLiteCC.java src/TLiteTE.java src/TLiteIronChest.java 2>&1 \
   | grep -vE 'bootstrap class path|source value 1\.6|target value 1\.6|options|unchecked' || true
 
 for f in build/cls/TLiteProtect.class build/cls/TLiteMFR.class build/cls/TLiteEE3.class \
-         build/cls/TLiteTreeCap.class build/cls/TLiteNEI.class build/cls/TLiteImmibis.class build/cls/TLiteBC.class build/cls/TLiteTurtle.class build/cls/TLiteCC.class; do
+         build/cls/TLiteTreeCap.class build/cls/TLiteNEI.class build/cls/TLiteImmibis.class build/cls/TLiteBC.class build/cls/TLiteTurtle.class build/cls/TLiteCC.class build/cls/TLiteTE.class build/cls/TLiteIronChest.class; do
   [ -f "$f" ] || { echo "helper class missing after compile: $f" >&2; exit 1; }
 done
 
@@ -93,6 +96,14 @@ patch_one "BuildCraft" "$BC_SRC" "buildcraft-A-3.4.3-patched.jar" \
 patch_one "ComputerCraft" "$CC_SRC" "ComputerCraft1.5-patched.zip" \
           PatchCC.java "turtle,packets" \
           build/cls/TLiteTurtle.class build/cls/TLiteProtect.class build/cls/TLiteCC.class
+
+patch_one "ThermalExpansion" "$TE_SRC" "ThermalExpansion-2.2.2.2-patched.zip" \
+          PatchTE.java "packets" \
+          build/cls/TLiteTE.class
+
+patch_one "IronChest" "$IRONCHEST_SRC" "ironchest-universal-1.4.7-5.1.0.275-patched.zip" \
+          PatchIronChest.java "crystalcap" \
+          build/cls/TLiteIronChest.class
 
 # Coremods. Server side like the rest: they go in the server's coremods/ folder.
 patch_one "TreeCapitator" "$TC_SRC" "[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.CoreMod-patched.jar" \
