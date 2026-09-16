@@ -1038,19 +1038,10 @@ dimension id crashed the link server-side.
 |---|---|
 | Other IC2 tools: Wrench, Foam Sprayer, Electric Hoe, Treetap, Painter, Cable Cutter, Terraformer | Change blocks with no protection check. GriefPrevention may already stop the right clicks on IC2 blocks. Not checked. |
 | Turtles placing vanilla blocks | MCPC+ asks plugins as the player "ComputerCraft" when a turtle places a vanilla block, so an owner's turtle may be refused in their own claim. Not checked. |
-| Pipes, tubes and AE buses reading a chest just inside a claim from outside | A border problem for anything that moves items. No fix. |
 | IC2 Terraformer changing terrain in claims | A placed Terraformer edits blocks in a radius with no owner; like MFFS it would need owner-tracking that its code does not make available cleanly. Recommend a ban or server-policy decision. |
-| AdvancedPowerManagement Battery Station output dupe | `moveOutputItems` increments the output slot when a different empty electric item is discharged into an occupied output, minting the output item. Reachability is uncertain (needs two empty electric-item types positioned just so) and the fix is a fiddly mid-method item-match check; deferred. |
-| LogisticsPipes Security Station takeover | Packets rewrite any station's settings with no owner check. Needs LP's own owner model worked out to gate safely without locking players out. Deferred. |
-| LogisticsPipes request amount | A request packet's quantity is an unvalidated int; a huge value could drive the crafting tree as a DoS. Clamp needed. Deferred. |
-| ComputerCraft command block peripheral | Off by config (`enableCommandBlock=false`). If enabled, a computer wired to a command block runs op level server commands. Leave it off. |
 | Tubestuff Black Hole Chest | Off by config (`enableBlackHoleChest=false`). If enabled, its unbounded inventory writes to NBT and the same chunk save loss as the Harvester flood applies. Leave it off. |
 | Tampered on-disk NBT crashing one chunk/tile load (Factorization slots, ACT Mk II recipe, immibis chunk loader shape, Mystcraft legacy biome) | Only reachable if the region file is already edited or corrupt, not by a player in game. Left as defensive hardening, not applied. |
-| ComputerCraft `http` API reaching localhost or the LAN | `http.request` has no host filter in 1.5, so a computer can read the server's own admin pages (dynmap, panels) or LAN devices. Config: set `enableAPI_http=false`, or a host filter could block loopback and private ranges. |
-| OpenCCSensors reading nearby players | A sensor reports a player's inventory, armour and position through walls within its tier's radius. Range bounded and inherent to the mod. Server policy. |
 | Balance and lag bans: Nuke, Industrial TNT, alarms, chunk loaders | Server policy rather than bugs. Left to config and plugins. |
-| CodeChickenCore 0.7.3, PowerCrystalsCore 1.0.3 | Scanned. Libraries with no player driven world changes. Nothing to fix. |
-| AE Conversion Matrix | Not a bug. It is a crafting material whose only use in the world is the Storage Monitor upgrade, covered by `monitor`. GriefPrevention's container trust list (900 to 902) already stops right clicks on AE blocks. |
 
 ---
 
