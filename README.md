@@ -16,21 +16,22 @@ Each patch is selectable individually.
 | [TreeCapitator 1.4.6 r07](#treecapitator-146-r07-coremod) (coremod) | `felling` |
 | [NotEnoughItems 1.4.7.0](#notenoughitems-1470-coremod) (coremod) | `spawner` · `creative` |
 | [BuildCraft 3.4.3](#buildcraft-343) | `quarry` · `filler` · `quarrychunks` |
-| [ComputerCraft 1.5](#computercraft-15) | `turtle` · `packets` |
+| [ComputerCraft 1.5](#computercraft-15) | `turtle` · `packets` · `http` |
 | [immibis-core 52.4.6](#immibis-core-5246-tubestuff) (Tubestuff) | `mergenbt` |
-| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` · `netevent` · `sorter` |
+| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` · `netevent` · `sorter` · `tesla` |
 | [ThermalExpansion 2.2.2.2](#thermalexpansion-2222) | `packets` |
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
-| [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` |
+| [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` · `requestclamp` · `security` |
 | [AdditionalPipes 2.1.3](#additionalpipes-213) | `teleowner` · `apchunkgate` |
 | [ChickenChunks 1.3.1.0](#chickenchunks-1310) | `spotloader` · `combinedquota` |
 | [Dimensional Anchors 52.2.0](#dimensional-anchors-5220) | `spotloader` · `combinedquota` |
-| [IC2NuclearControl 1.4.6](#ic2nuclearcontrol-146) | `packets` |
+| [IC2NuclearControl 1.4.6](#ic2nuclearcontrol-146) | `packets` · `cardcap` |
 | [OmniTools 3.0.4](#omnitools-304) | `wrench` |
 | [Balkon's Weaponmod](#balkons-weaponmod) | `dynamite` |
 | [WR-CBE Wireless Redstone 1.3.2.8](#wr-cbe-wireless-redstone-1328) | `freq` |
 | [Steve's Carts 2.0.0.a62](#steves-carts-2000a62) | `carts` |
-| [AdvancedPowerManagement 1.1.55](#advancedpowermanagement-1155) | `guibutton` |
+| [AdvancedPowerManagement 1.1.55](#advancedpowermanagement-1155) | `guibutton` · `outputdupe` |
+| [Advanced Repulsion Systems 52.0.6](#advanced-repulsion-systems-5206) | `tesla` |
 | [Modular Powersuits 0.7](#modular-powersuits-07) | `tweak` |
 | [Mystcraft 0.10.1](#mystcraft-0101) | `linknull` |
 
@@ -410,6 +411,18 @@ same block on open ground.
 ## ComputerCraft 1.5
 
 <details>
+<summary><b><code>http</code>: a computer reaching localhost or the LAN through the http API</b></summary>
+
+**The bug.** `http.request` resolves and connects with no host filter, so a computer could read the server's own services (dynmap, admin panels) or other machines on the LAN.
+
+**The patch.** `HTTPRequest`'s constructor, after its protocol check, runs `TLiteCC.isBlockedHttp` on the target and throws the mod's own `HTTPRequestException` when the host resolves to a loopback, wildcard, link-local, site-local (private LAN) or IPv6 unique-local address. Public destinations are unaffected; a blocked request fails cleanly in Lua.
+
+**Verified** on the test server: public IPs allowed, loopback/private/localhost blocked.
+
+</details>
+
+
+<details>
 <summary><b><code>turtle</code>: dig, build, take and move inside claims (protection)</b></summary>
 
 **The bug.** Turtles dig, attack, place, suck items from, drop items into and move into the block
@@ -477,6 +490,18 @@ total. Patched: 1 holding 1000 and 15 empty ones in the next slot, 1000 in total
 ---
 
 ## IndustrialCraft 2 and RedPower 2 (TLiteFixes coremod)
+
+<details>
+<summary><b><code>tesla</code>: a PvE switch for the IC2 Tesla Coil</b></summary>
+
+**Why.** The IC2 Tesla Coil (block 223) shocks every living entity in range, players included, with no way to spare them.
+
+**The patch.** `TileEntityTesla.shock`'s attack is routed through `TLiteIC2.teslaShock`. With `config/TeslaCoil.cfg` `basicTeslaCoil.noPlayerDamage` on, players take no damage from the coil; it still clears mobs. Off by default.
+
+**Verified**: the coil's class is patched at load and the redirect is in place; live player-sparing wants an in-game check.
+
+</details>
+
 
 IC2 and RedPower ship signed jars. Changing a class in a signed jar breaks the mod: the class
 fails its digest, and stripping the signature makes Java refuse the rest of RedPower, whose
@@ -632,6 +657,29 @@ crystal chests render items, so no other chest is affected, and nothing about st
 ## LogisticsPipes 0.7.0.96
 
 <details>
+<summary><b><code>requestclamp</code>: a huge request quantity as a denial of service</b></summary>
+
+**The bug.** The request packet's amount is an unvalidated client int that sizes the crafting tree, so a near-max value drove that planning as a DoS.
+
+**The patch.** `RequestHandler.request` and `simulate` route `packet.amount` through `TLiteLP.clampAmount` before `ItemIdentifier.makeStack`, bounding it to 100000 (far above any real request) and flooring negatives at zero. The liquid path is left alone.
+
+**Verified**: 5/64/100000 pass unchanged; 100001 and MAX_INT clamp to 100000; -7 to 0.
+
+</details>
+
+<details>
+<summary><b><code>security</code>: rewrite or lock any Security Station from anywhere</b></summary>
+
+**The bug.** The four security-station packet handlers looked up the station by the packet's coordinates and rewrote it with no check that the sender was interacting with it, so anyone could rewrite or lock any station remotely.
+
+**The patch.** Each handler routes through `TLiteLP.securityAllowed` after the tile cast: the packet is honoured only if the sender is in the station's viewer list (has its GUI open). Closes the remote takeover without locking out anyone who could already edit it.
+
+**Verified**: no viewer refused, viewer allowed, a different-viewer sender refused.
+
+</details>
+
+
+<details>
 <summary><b><code>diskdupe</code>: Request Pipe Mk2 disk packet spawns arbitrary items</b></summary>
 
 **The bug.** The disk-change packet stored a fully client-controlled ItemStack as a Request Pipe
@@ -785,6 +833,18 @@ anchor is refused.
 ## IC2NuclearControl 1.4.6
 
 <details>
+<summary><b><code>cardcap</code>: flooding one Info Panel's sensor-card NBT</b></summary>
+
+**The bug.** The reach gate still left a player next to a panel able to flood one sensor card: the card packet writes a client-named field with `setInt`/`setBoolean`/`setLong`/`setString` and nothing bounded how many distinct keys were added, growing the card's NBT until its chunk failed to save.
+
+**The patch.** Each setter checks `TLiteNC.allowCardField` first, refusing a new key once the card already holds 32 of them. A legit card uses a handful of fields, well under the cap.
+
+**Verified**: a 40-key card refuses new keys but still updates existing ones; a fresh card is unaffected.
+
+</details>
+
+
+<details>
 <summary><b><code>packets</code>: spam alarms and flood an Info Panel's NBT from anywhere</b></summary>
 
 **The bug.** The packet handler read block coordinates from the client and looked up the tile
@@ -895,6 +955,18 @@ only on open ground.
 ## AdvancedPowerManagement 1.1.55
 
 <details>
+<summary><b><code>outputdupe</code>: Battery Station output item dupe</b></summary>
+
+**The bug.** `TEBatteryStation.moveOutputItems` raised the output slot's stack by one for any discharged item without checking the slot already held the same item, so discharging a different empty electric item into an occupied output slot minted the output item.
+
+**The patch.** The increment is guarded by `TLiteAPM.canMerge(contents[1], contents[i])`, so only genuinely stackable items merge; normal same-item stacking is unchanged.
+
+**Verified**: same-item merges; a different item and null are refused.
+
+</details>
+
+
+<details>
 <summary><b><code>guibutton</code>: toggle any Battery Station's mode from anywhere</b></summary>
 
 **The bug.** The GUI-button packet ran `receiveGuiButton` on the machine at the client's
@@ -905,6 +977,21 @@ an Emitter's packet size from anywhere.
 is within reach of the machine in the same world.
 
 **Verified** on the test server: the call is routed through the reach gate and the mod loads.
+
+</details>
+
+---
+
+## Advanced Repulsion Systems 52.0.6
+
+<details>
+<summary><b><code>tesla</code>: PvE and drop-deny switches for the Industrial Tesla Coil</b></summary>
+
+**Why.** The Industrial Tesla Coil (block 1952) shocks its target in `fireShot` with no way to spare players or withhold mob loot.
+
+**The patch.** Two default-off flags in `config/TeslaCoil.cfg`: `industrialTeslaCoil.noPlayerDamage` makes `fireShot` skip player targets (PvE), and `industrialTeslaCoil.denyMobDrops` routes the shock through `TLiteARS.shock`, which registers a `LivingDropsEvent` handler keyed to this coil's own damage source and cancels the drops of anything it kills. Both off by default.
+
+**Verified** on the test server: both flags read from config, and the drops handler cancels the coil's own source while leaving a different source alone; live behaviour wants an in-game check.
 
 </details>
 
@@ -955,7 +1042,6 @@ dimension id crashed the link server-side.
 | Pipes, tubes and AE buses reading a chest just inside a claim from outside | A border problem for anything that moves items. No fix. |
 | IC2 Terraformer changing terrain in claims | A placed Terraformer edits blocks in a radius with no owner; like MFFS it would need owner-tracking that its code does not make available cleanly. Recommend a ban or server-policy decision. |
 | AdvancedPowerManagement Battery Station output dupe | `moveOutputItems` increments the output slot when a different empty electric item is discharged into an occupied output, minting the output item. Reachability is uncertain (needs two empty electric-item types positioned just so) and the fix is a fiddly mid-method item-match check; deferred. |
-| MFFS force fields (adv-repulsion) projected into claims | Field blocks reference their projector only by an integer id, and projectors carry no owner, so owner-tracking (as used for the other machines) is impractical without reverse-engineering the projector registry; an ownerless guard would also break force fields around a player's own claimed base. Recommend banning the projectors, or a server-policy decision. |
 | LogisticsPipes Security Station takeover | Packets rewrite any station's settings with no owner check. Needs LP's own owner model worked out to gate safely without locking players out. Deferred. |
 | LogisticsPipes request amount | A request packet's quantity is an unvalidated int; a huge value could drive the crafting tree as a DoS. Clamp needed. Deferred. |
 | ComputerCraft command block peripheral | Off by config (`enableCommandBlock=false`). If enabled, a computer wired to a command block runs op level server commands. Leave it off. |
