@@ -22,7 +22,7 @@ Each patch is selectable individually.
 | [ThermalExpansion 2.2.2.2](#thermalexpansion-2222) | `packets` |
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
 | [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` · `requestclamp` · `security` |
-| [AdditionalPipes 2.1.3](#additionalpipes-213) | `teleowner` · `apchunkgate` |
+| [AdditionalPipes 2.1.3](#additionalpipes-213) | `teleowner` · `apparity` |
 | [ChickenChunks 1.3.1.0](#chickenchunks-1310) | `spotloader` · `combinedquota` |
 | [Dimensional Anchors 52.2.0](#dimensional-anchors-5220) | `spotloader` · `combinedquota` |
 | [IC2NuclearControl 1.4.6](#ic2nuclearcontrol-146) | `packets` · `cardcap` |
@@ -714,25 +714,32 @@ alone.
 </details>
 
 <details>
-<summary><b><code>apchunkgate</code>: turn off the AdditionalPipes chunk loader (ChunkLoaderConversion)</b></summary>
+<summary><b><code>apparity</code>: the Teleport Tether becomes a capped single-chunk loader (ChunkLoaderConversion)</b></summary>
 
-**Why.** The AdditionalPipes chunk loader (the "Teleport Tether", block 4077) keeps its area of
-chunks force loaded through a Forge ticket, offline included, and the mod ships no config switch
-for it. It is banned and its recipe is disabled, but a legacy or creative-placed one would still
-load chunks.
+**Why.** The AdditionalPipes chunk loader (the "Teleport Tether", block 4077) force loaded an area
+of chunks through a Forge ticket, offline included, with no owner and no per-player limit, so it was
+banned. Rather than leave it disabled, apparity rebuilds it as a peer of the other two loaders.
 
-**The patch.** The loader tile's tick calls `TLiteAP.apChunkLoadEnabled()` first. When it returns
-false, the tile drops its ticket and returns before requesting a new one, so it loads nothing. The
-flag lives in `config/ChunkLoaderConversion.cfg` (`additionalpipes.chunkloader.enabled`) beside the
-other mod configs and defaults to off; the file is created with the default if it is missing.
+**The patch.** The mod tracks no owner and has no placement hook, so this adds the whole system:
+- a public `tliteOwner` field on `TileChunkLoader`, set from the placer by a new `onBlockPlacedBy`
+  on `BlockChunkLoader` and persisted in the tile's NBT;
+- `getLoadArea` is forced to a single chunk (`loadDistance` 0);
+- the tick `s()` force loads only when `TLiteAP.apShouldLoad` allows it: the master switch
+  `additionalpipes.chunkloader.enabled` (now on by default) is set, the loader has an owner, the
+  owner is online or within grace, and the owner is under the shared per-player cap (via
+  `TLiteChunkQuota`); otherwise it stops loading.
+
+So the Tether is now a single-chunk, owner-tracked loader in the same per-player budget as the
+others, and it is **unbanned with its recipe re-enabled** (`APUnofficial.cfg` `-4077` -> `4077`).
+Like the anchor, one offline past the grace deactivates and revives when its chunk next loads.
 
 **Teleport pipes are not touched.** A teleport pipe removes itself from the network when its chunk
 unloads (`invalidate` and `onChunkUnload` both call `TeleportManager.remove`), so an item sent
 toward a destination in an unloaded chunk finds no target and drops at the source pipe rather than
-teleporting into an unloaded chunk. No extra guard is needed for that case.
+teleporting into an unloaded chunk.
 
-**Verified** on the test server: `TLiteAP.apChunkLoadEnabled()` reads false by default, and the
-gate is present at the top of the loader tick in the patched jar.
+**Verified**: all six injections are present in the patched jar and it loads clean; live placement,
+ownership and offline behaviour want an in-game check.
 
 </details>
 
@@ -782,7 +789,15 @@ conservative under-count.
 
 **Verified** on the test server with the limit forced to 3: one owner's first three ChickenChunks
 claims are allowed, the next two are refused, and a same-owner Dimensional Anchor is refused because
-the three ChickenChunks chunks already fill the shared budget.
+the three ChickenChunks chunks already fill the shared budget (registry: 3 active, 3 disabled, 6
+listed).
+
+**Player-facing.** `TLiteChunkQuota` also backs a small registry used across the loaders: placing a
+loader messages the owner "Chunk loaders: N/6" (or, at the cap, "disabled: you are at your limit");
+`/loaders` lists a player's loaders and on/off status (`/loaders <player>` needs op or
+`tekkitcustomizer.loaders.others`); and an owner over the limit is reminded on login. Offline
+shutdown is uniform too: the Dimensional Anchor and the Teleport Tether now stop loading when their
+owner is offline past a ~10-minute grace (ChickenChunks already did via `allowoffline`).
 
 </details>
 
