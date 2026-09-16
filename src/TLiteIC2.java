@@ -1,3 +1,8 @@
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileWriter;
+import java.util.Properties;
+
 import org.bukkit.craftbukkit.v1_4_R1.entity.CraftFakePlayer;
 
 import ic2.core.ExplosionIC2;
@@ -103,6 +108,89 @@ public class TLiteIC2 {
             if (tile.k == player.p && player.e(tile.l + 0.5, tile.m + 0.5, tile.n + 0.5) <= 64.0) {
                 listener.onNetworkEvent(player, event);
             }
+        }
+    }
+
+    // ------------------------------------------------------------ IC2 Tesla Coil (block 223)
+
+    /**
+     * IC2's basic Tesla Coil (TileEntityTesla.shock) damages every EntityLiving in range, players
+     * included (qx extends md here). This replaces its attackEntityFrom call: when the config flag
+     * basicTeslaCoil.noPlayerDamage is on, players take no damage from the coil, so it clears mobs
+     * on a PvE server without hurting people. Off by default, so the coil is unchanged otherwise.
+     *
+     * md = EntityLiving, qx = EntityPlayer, lh = DamageSource; md.a(lh, int) = attackEntityFrom.
+     */
+    public static boolean teslaShock(md target, lh src, int dmg) {
+        if (target instanceof qx && ic2TeslaNoPlayerDamage()) {
+            return false;
+        }
+        return target.a(src, dmg);
+    }
+
+    private static final String TESLA_CFG = "config/TeslaCoil.cfg";
+    private static volatile Boolean ic2TeslaNoPlayer;
+
+    public static boolean ic2TeslaNoPlayerDamage() {
+        Boolean b = ic2TeslaNoPlayer;
+        if (b == null) {
+            b = loadTesla();
+        }
+        return b.booleanValue();
+    }
+
+    private static synchronized Boolean loadTesla() {
+        if (ic2TeslaNoPlayer != null) {
+            return ic2TeslaNoPlayer;
+        }
+        boolean v = false;
+        try {
+            File f = new File(TESLA_CFG);
+            if (f.isFile()) {
+                Properties p = new Properties();
+                FileInputStream in = new FileInputStream(f);
+                try {
+                    p.load(in);
+                } finally {
+                    in.close();
+                }
+                v = Boolean.parseBoolean(p.getProperty("basicTeslaCoil.noPlayerDamage", "false").trim());
+            } else {
+                writeTeslaDefault(f);
+            }
+        } catch (Throwable t) {
+            // Unreadable config: keep the coil at its normal behaviour.
+        }
+        ic2TeslaNoPlayer = Boolean.valueOf(v);
+        return ic2TeslaNoPlayer;
+    }
+
+    /**
+     * Writes the shared config/TeslaCoil.cfg with all three tesla flags if it is missing. TLiteARS
+     * writes the same three keys, so whichever coil fires first creates an identical file.
+     */
+    private static void writeTeslaDefault(File f) {
+        try {
+            File dir = f.getParentFile();
+            if (dir != null && !dir.isDirectory()) {
+                dir.mkdirs();
+            }
+            FileWriter w = new FileWriter(f);
+            try {
+                w.write("# IC2 basic Tesla Coil (block 223)\n");
+                w.write("# Never damage players with the IC2 Tesla Coil (PvE: it still shocks mobs).\n");
+                w.write("basicTeslaCoil.noPlayerDamage=false\n");
+                w.write("\n");
+                w.write("# Industrial Tesla Coil (Advanced Repulsion Systems, block 1952)\n");
+                w.write("# Deny the drops of mobs it kills, so a grinder clears mobs without loot.\n");
+                w.write("industrialTeslaCoil.denyMobDrops=false\n");
+                w.write("# Never damage players with the Industrial Tesla Coil (PvE).\n");
+                w.write("industrialTeslaCoil.noPlayerDamage=false\n");
+            } finally {
+                w.close();
+            }
+        } catch (Throwable t) {
+            // Best effort.
         }
     }
 }

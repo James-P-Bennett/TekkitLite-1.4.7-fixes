@@ -59,6 +59,7 @@ public class TLiteTransformer implements IClassTransformer {
     static final String NETMGR = "ic2/core/network/NetworkManager";
     static final String NETLISTENER = "ic2/api/network/INetworkClientTileEntityEventListener";
     static final String SORTER = "com/eloraam/redpower/machine/ContainerSorter";
+    static final String TESLA = "ic2/core/block/machine/tileentity/TileEntityTesla";
 
     public byte[] transform(String name, byte[] bytes) {
         if (name == null || bytes == null) {
@@ -68,7 +69,7 @@ public class TLiteTransformer implements IClassTransformer {
         if (!internal.equals(LASER) && !internal.equals(EXPLOSION) && !internal.equals(BAG)
                 && !internal.equals(COREPROXY) && !internal.equals(BREAKER) && !internal.equals(IGNITER)
                 && !internal.equals(TILEMACHINE) && !internal.equals(DEPLOYER) && !internal.equals(NETMGR)
-                && !internal.equals(SORTER)) {
+                && !internal.equals(SORTER) && !internal.equals(TESLA)) {
             return bytes;
         }
         try {
@@ -98,6 +99,7 @@ public class TLiteTransformer implements IClassTransformer {
         else if (internal.equals(DEPLOYER)) ok = patchDeployer(cn);
         else if (internal.equals(NETMGR)) ok = patchNetworkManager(cn);
         else if (internal.equals(SORTER)) ok = patchSorter(cn);
+        else if (internal.equals(TESLA)) ok = patchTesla(cn);
         else ok = patchBag(cn);
         if (!ok) {
             return null;
@@ -142,6 +144,28 @@ public class TLiteTransformer implements IClassTransformer {
             }
         }
         return mine == 1 && explode == 1;
+    }
+
+    /**
+     * shock(int): the coil damages every EntityLiving in range with md.attackEntityFrom
+     * (md.a(lh,int)Z), players included. Route it through TLiteIC2.teslaShock so the
+     * basicTeslaCoil.noPlayerDamage flag can spare players. The stack [target, source, damage]
+     * matches the static call's arguments.
+     */
+    static boolean patchTesla(ClassNode cn) {
+        int hits = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("shock") || !m.desc.equals("(I)Z")) continue;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
+                MethodInsnNode mi = (MethodInsnNode) i;
+                if (!mi.owner.equals("md") || !mi.name.equals("a") || !mi.desc.equals("(Llh;I)Z")) continue;
+                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", "teslaShock", "(Lmd;Llh;I)Z"));
+                hits++;
+            }
+        }
+        return hits == 1;
     }
 
     /** doExplosion(): the only ys.a(III)I call has [cache, x, y, z]; this is pushed after them. */
@@ -402,7 +426,7 @@ public class TLiteTransformer implements IClassTransformer {
             System.err.println("usage: TLiteTransformer <ic2.jar> <RedPowerCore.zip> <RedPowerMechanical.zip>");
             System.exit(2);
         }
-        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER }, { args[0], NETMGR }, { args[2], SORTER } };
+        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER }, { args[0], NETMGR }, { args[2], SORTER }, { args[0], TESLA } };
         boolean failed = false;
         for (String[] check : checks) {
             ZipFile zf = new ZipFile(check[0]);

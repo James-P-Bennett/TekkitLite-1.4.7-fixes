@@ -96,6 +96,10 @@ public class TLiteARS {
             }
             FileWriter w = new FileWriter(f);
             try {
+                w.write("# IC2 basic Tesla Coil (block 223)\n");
+                w.write("# Never damage players with the IC2 Tesla Coil (PvE: it still shocks mobs).\n");
+                w.write("basicTeslaCoil.noPlayerDamage=false\n");
+                w.write("\n");
                 w.write("# Industrial Tesla Coil (Advanced Repulsion Systems, block 1952)\n");
                 w.write("# Deny the drops of mobs this coil kills, so a grinder clears mobs without loot.\n");
                 w.write("industrialTeslaCoil.denyMobDrops=false\n");
