@@ -65,7 +65,7 @@ mkdir -p build/cls build/tool
 # kills the script with no explanation.
 "$JAVAC8" -nowarn -source 1.6 -target 1.6 \
   -bootclasspath "$(dirname "$JAVAC8")/../jre/lib/rt.jar" \
-  -cp "$MCPC:$MFR_SRC:$PCC:$EE3_SRC:$IC2_SRC:$IMMIBIS_SRC:$RPCORE_SRC:$BC_SRC:$CC_SRC:$TE_SRC:$COFH_SRC:$LP_SRC:$WM_SRC:$WR_SRC:$SC_SRC:$APM_SRC:$CCC:$TC_SRC:$BSPKRS:$NEI_SRC:$CCC:$CHUNKS_SRC" -d build/cls \
+  -cp "$MCPC:$MFR_SRC:$PCC:$EE3_SRC:$IC2_SRC:$IMMIBIS_SRC:$RPCORE_SRC:$BC_SRC:$CC_SRC:$TE_SRC:$COFH_SRC:$LP_SRC:$WM_SRC:$WR_SRC:$SC_SRC:$APM_SRC:$CCC:$TC_SRC:$BSPKRS:$NEI_SRC:$CCC:$CHUNKS_SRC:$NC_SRC" -d build/cls \
   src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java src/TLiteImmibis.java src/TLiteBC.java src/TLiteTurtle.java src/TLiteCC.java src/TLiteTE.java src/TLiteIronChest.java src/TLiteLP.java src/TLiteNC.java src/TLiteWM.java src/TLiteWR.java src/TLiteSC.java src/TLiteAPM.java src/TLiteMPS.java src/TLiteAP.java src/TLiteChunkQuota.java 2>&1 \
   | grep -vE 'bootstrap class path|source value 1\.6|target value 1\.6|options|unchecked' || true
 
@@ -119,7 +119,7 @@ patch_one "IronChest" "$IRONCHEST_SRC" "ironchest-universal-1.4.7-5.1.0.275-patc
           build/cls/TLiteIronChest.class
 
 patch_one "LogisticsPipes" "$LP_SRC" "LogisticsPipes-MC1.4.7-0.7.0.96-patched.jar" \
-          PatchLP.java "diskdupe,requestclamp" \
+          PatchLP.java "diskdupe,requestclamp,security" \
           build/cls/TLiteLP.class
 
 patch_one "AdditionalPipes" "$AP_SRC" "AdditionalPipes2.1.3u42-BC3.4.2-MC1.4.7-patched.jar" \
@@ -138,7 +138,7 @@ patch_one "Dimensional Anchor" "$DA_SRC" "dimensional-anchor-52.2.0-patched.jar"
           build/cls/TLiteChunkQuota.class
 
 patch_one "IC2NuclearControl" "$NC_SRC" "IC2NuclearControl-1.4.6-patched.zip" \
-          PatchNC.java "packets" \
+          PatchNC.java "packets,cardcap" \
           build/cls/TLiteNC.class
 
 patch_one "OmniTools" "$OT_SRC" "OmniTools-3.0.4-patched.zip" \
@@ -158,7 +158,7 @@ patch_one "Steve's Carts" "$SC_SRC" "StevesCarts2.0.0.a62-patched.zip" \
           build/cls/TLiteSC.class build/cls/TLiteProtect.class
 
 patch_one "AdvancedPowerManagement" "$APM_SRC" "AdvancedPowerManagement-1.1.55-IC2_1.112-patched.jar" \
-          PatchAPM.java "guibutton" \
+          PatchAPM.java "guibutton,outputdupe" \
           build/cls/TLiteAPM.class
 
 patch_one "ModularPowersuits" "$MPS_SRC" "ModularPowersuits-0.3.2-199-patched.jar" \

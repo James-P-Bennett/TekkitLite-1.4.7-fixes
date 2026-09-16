@@ -1,4 +1,8 @@
+import java.lang.reflect.Field;
+import java.util.List;
+
 import logisticspipes.LogisticsPipes;
+import logisticspipes.blocks.LogisticsSecurityTileEntity;
 import logisticspipes.pipes.PipeItemsRequestLogisticsMk2;
 
 /**
@@ -38,5 +42,32 @@ public class TLiteLP {
             return 0;
         }
         return amount > MAX_REQUEST ? MAX_REQUEST : amount;
+    }
+
+    private static Field listenerField; // LogisticsSecurityTileEntity.listener
+
+    /**
+     * The security-station packets (card button, open per-player settings, save settings, toggle
+     * CC access) looked up the station by the packet's coordinates and rewrote it with no check
+     * that the sender was interacting with it, so anyone could rewrite or lock any station from
+     * anywhere. The station tracks the players who have its GUI open in a private "listener" list
+     * (IGuiOpenControler); a legitimate edit only ever comes from one of them. The security patch
+     * gates each handler on this: the packet is honoured only if the sender has that station's GUI
+     * open. This closes the remote takeover without locking out anyone who could already edit it.
+     */
+    public static boolean securityAllowed(LogisticsSecurityTileEntity tile, qx player) {
+        if (tile == null || player == null) {
+            return false;
+        }
+        try {
+            if (listenerField == null) {
+                listenerField = LogisticsSecurityTileEntity.class.getDeclaredField("listener");
+                listenerField.setAccessible(true);
+            }
+            Object l = listenerField.get(tile);
+            return (l instanceof List) && ((List) l).contains(player);
+        } catch (Throwable t) {
+            return false;
+        }
     }
 }

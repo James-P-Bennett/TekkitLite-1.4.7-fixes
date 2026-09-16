@@ -22,4 +22,18 @@ public class TLiteAPM {
             tile.receiveGuiButton(button);
         }
     }
+
+    /**
+     * The Battery Station's moveOutputItems increments the output slot's stack by one whenever a
+     * discharged electric item is pulled from an input slot, without checking that the output slot
+     * already holds the same item. Discharging a different empty electric item into an occupied
+     * output slot therefore mints the output item. The outputdupe patch guards that increment with
+     * this: the merge only happens when the two stacks are actually stackable (same item, same
+     * damage, matching tags), which is exactly the normal case, so real use is unaffected.
+     *
+     * ur = ItemStack; ur.c = itemID, ur.j() = getItemDamage, ur.a(ur, ur) = areItemStackTagsEqual.
+     */
+    public static boolean canMerge(ur out, ur src) {
+        return out != null && src != null && out.c == src.c && out.j() == src.j() && ur.a(out, src);
+    }
 }

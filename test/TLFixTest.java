@@ -87,6 +87,9 @@ import dan200.computer.shared.TileEntityComputer;
  *   tlfix quota      one combined per-player chunk cap shared by ChickenChunks and anchors
  *   tlfix cchttp     ComputerCraft http API host filter: public allowed, loopback/LAN blocked
  *   tlfix lpclamp    LogisticsPipes request amount clamp bounds a DoS quantity
+ *   tlfix lpsec      LogisticsPipes security station edit allowed only for a viewer of that station
+ *   tlfix ncflood    NuclearControl sensor card field cap bounds NBT growth
+ *   tlfix apmdupe    APM Battery Station output merge only for stackable items
  *
  * The claim is owned by "Owner" and every action is done by the fake player "Intruder", who
  * has no trust in it. Default package so the obfuscated vanilla classes can be named.
@@ -99,7 +102,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -133,6 +136,9 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("quota")) quota(sender);
             else if (s.equals("cchttp")) cchttp(sender);
             else if (s.equals("lpclamp")) lpclamp(sender);
+            else if (s.equals("lpsec")) lpsec(sender);
+            else if (s.equals("ncflood")) ncflood(sender);
+            else if (s.equals("apmdupe")) apmdupe(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -1068,6 +1074,49 @@ public class TLFixTest extends JavaPlugin {
         anchor.owner = "QuotaTester";
         boolean anchorAllowed = TLiteChunkQuota.daClaim(anchor);
         sender.sendMessage(TAG + "quota: ChickenChunks claims allowed " + allowed + " of 5, same-owner anchor allowed " + anchorAllowed + "  (expect 3 and false)");
+    }
+
+    /** APM Battery Station dupe guard: only stackable (same) items merge into the output slot. */
+    private void apmdupe(CommandSender sender) {
+        ur a1 = new ur(4, 1, 0);
+        ur a2 = new ur(4, 1, 0);
+        ur other = new ur(1, 1, 0);
+        boolean same = TLiteAPM.canMerge(a1, a2);
+        boolean diff = TLiteAPM.canMerge(a1, other);
+        boolean nul = TLiteAPM.canMerge(a1, null);
+        sender.sendMessage(TAG + "apmdupe: same-item merge=" + same + ", different-item merge=" + diff
+                + ", null merge=" + nul + "  (expect true, false, false)");
+    }
+
+    /** NuclearControl card cap: a card already at the field limit refuses new keys but still updates existing ones. */
+    private void ncflood(CommandSender sender) throws Exception {
+        ur full = new ur(1, 1, 0);
+        bq tag = shedar.mods.ic2.nuclearcontrol.utils.ItemStackUtils.getTagCompound(full);
+        for (int i = 0; i < 40; i++) tag.a("f" + i, i);
+        boolean blocksNew = !TLiteNC.allowCardField(full, "newkey");
+        boolean allowsExisting = TLiteNC.allowCardField(full, "f0");
+        ur fresh = new ur(1, 1, 0);
+        boolean freshAllows = TLiteNC.allowCardField(fresh, "anything");
+        int keys = tag.c().size();
+        sender.sendMessage(TAG + "ncflood: full(" + keys + ") blocks new=" + blocksNew + ", updates existing=" + allowsExisting
+                + ", fresh allows=" + freshAllows + "  (expect true, true, true)");
+    }
+
+    /** LogisticsPipes security gate: only a player with the station's GUI open may edit it. */
+    private void lpsec(CommandSender sender) throws Exception {
+        logisticspipes.blocks.LogisticsSecurityTileEntity tile = new logisticspipes.blocks.LogisticsSecurityTileEntity();
+        iq p = intruder(world());
+        iq other = CraftFakePlayer.get(world(), "Other", true);
+        java.lang.reflect.Field f = logisticspipes.blocks.LogisticsSecurityTileEntity.class.getDeclaredField("listener");
+        f.setAccessible(true);
+        f.set(tile, new java.util.ArrayList());
+        boolean noneViewing = TLiteLP.securityAllowed(tile, p);
+        java.util.List only = new java.util.ArrayList(); only.add(p); f.set(tile, only);
+        boolean pViewing = TLiteLP.securityAllowed(tile, p);
+        java.util.List others = new java.util.ArrayList(); others.add(other); f.set(tile, others);
+        boolean pWhileOther = TLiteLP.securityAllowed(tile, p);
+        sender.sendMessage(TAG + "lpsec: no viewer allowed=" + noneViewing + ", sender viewing allowed=" + pViewing
+                + ", only-other-viewing allowed=" + pWhileOther + "  (expect false, true, false)");
     }
 
     /** LogisticsPipes request clamp: legit amounts pass through, huge/negative ones are bounded. */

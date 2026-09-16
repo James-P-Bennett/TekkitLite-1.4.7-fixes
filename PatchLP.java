@@ -13,6 +13,10 @@ import java.util.zip.*;
  *   requestclamp  RequestHandler.request and simulate
  *                 packet.amount (before ItemIdentifier.makeStack) -> TLiteLP.clampAmount(amount)
  *
+ *   security      ServerPacketHandler.onSecurityCardButton/onOpenSecurityPlayer/
+ *                 onSaveSecurityPlayer/onSetSecurityCC
+ *                 after each casts the tile: if (!TLiteLP.securityAllowed(tile, player)) return
+ *
  * The disk-change packet stored a client-controlled ItemStack as a Request Pipe Mk2's disk, and
  * the disk-drop packet spawned it into the world: unlimited item creation. The store now only
  * accepts a real disk item.
@@ -30,11 +34,17 @@ public class PatchLP {
     static final String REQHANDLER = "logisticspipes/request/RequestHandler";
     static final String PACKET = "logisticspipes/network/packets/PacketRequestSubmit";
     static final String IDENT = "logisticspipes/utils/ItemIdentifier";
+    static final String SPH = "logisticspipes/network/ServerPacketHandler";
+    static final String SECTILE = "logisticspipes/blocks/LogisticsSecurityTileEntity";
+    static final java.util.Set<String> SEC_HANDLERS = new java.util.HashSet<String>(java.util.Arrays.asList(
+            "onSecurityCardButton", "onOpenSecurityPlayer", "onSaveSecurityPlayer", "onSetSecurityCC"));
 
     static boolean doDisk;
     static int diskHits;
     static boolean doClamp;
     static int clampHits;
+    static boolean doSecurity;
+    static int securityHits;
 
     public static void main(String[] args) throws Exception {
         if (args.length < 4) {
@@ -46,6 +56,7 @@ public class PatchLP {
             p = p.trim();
             if (p.equals("diskdupe")) doDisk = true;
             else if (p.equals("requestclamp")) doClamp = true;
+            else if (p.equals("security")) doSecurity = true;
             else throw new IllegalArgumentException("unknown patch: " + p);
         }
 
@@ -58,6 +69,7 @@ public class PatchLP {
             String n = ze.getName();
             if (doDisk && n.equals(HANDLER + ".class")) d = patchDisk(d);
             if (doClamp && n.equals(REQHANDLER + ".class")) d = patchClamp(d);
+            if (doSecurity && n.equals(SPH + ".class")) d = patchSecurity(d);
             out.put(n, d);
         }
         zf.close();
@@ -70,6 +82,8 @@ public class PatchLP {
             throw new IllegalStateException("diskdupe: expected 1 setDisk call, patched " + diskHits);
         if (doClamp && clampHits != 2)
             throw new IllegalStateException("requestclamp: expected 2 amount reads (request, simulate), patched " + clampHits);
+        if (doSecurity && securityHits != 4)
+            throw new IllegalStateException("security: expected 4 handler guards, patched " + securityHits);
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -118,6 +132,38 @@ public class PatchLP {
                 if (!mk.owner.equals(IDENT) || !mk.name.equals("makeStack")) continue;
                 m.instructions.insert(fi, new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "clampAmount", "(I)I", false));
                 clampHits++;
+            }
+        }
+        return write(cn);
+    }
+
+    /**
+     * In each security-station handler, right after it casts the looked-up tile to
+     * LogisticsSecurityTileEntity, insert: dup the tile, pass it and the sender (local 0) to
+     * TLiteLP.securityAllowed; if that is false, drop the tile and return, so the station is not
+     * touched. The player is the handler's first argument.
+     */
+    static byte[] patchSecurity(byte[] in) {
+        ClassNode cn = read(in);
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!SEC_HANDLERS.contains(m.name)) continue;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.CHECKCAST) continue;
+                TypeInsnNode ti = (TypeInsnNode) i;
+                if (!ti.desc.equals(SECTILE)) continue;
+                LabelNode ok = new LabelNode();
+                InsnList g = new InsnList();
+                g.add(new InsnNode(Opcodes.DUP));
+                g.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                g.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "securityAllowed", "(L" + SECTILE + ";Lqx;)Z", false));
+                g.add(new JumpInsnNode(Opcodes.IFNE, ok));
+                g.add(new InsnNode(Opcodes.POP));
+                g.add(new InsnNode(Opcodes.RETURN));
+                g.add(ok);
+                m.instructions.insert(ti, g);
+                m.maxStack = Math.max(m.maxStack, 6);
+                securityHits++;
             }
         }
         return write(cn);

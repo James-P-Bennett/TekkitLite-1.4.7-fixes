@@ -10,29 +10,40 @@ import java.util.zip.*;
  *   packets   CommonProxy.onPacketData
  *             world.getBlockTileEntity(x, y, z)  ->  TLiteNC.gate(world, x, y, z, player)
  *
+ *   cardcap   CardWrapperImpl.setInt/setLong/setBoolean/setString
+ *             start with: if (!TLiteNC.allowCardField(this.card, name)) return;
+ *
  * The handler trusted the packet's coordinates, letting a client spam any Howler Alarm's sound
  * and flood any Info Panel's sensor-card NBT from anywhere in its world. Each lookup is gated to
- * tiles within reach of the sender.
+ * tiles within reach of the sender. cardcap then bounds the reach-limited case: a sensor card can
+ * hold only so many distinct fields, so a player next to a panel can no longer grow one card's
+ * NBT without limit.
  *
  * usage: PatchNC <in.zip> <out.zip> <patch>[,<patch>...] <TLiteNC.class>
  */
 public class PatchNC {
 
     static final String PROXY = "shedar/mods/ic2/nuclearcontrol/CommonProxy";
+    static final String WRAPPER = "shedar/mods/ic2/nuclearcontrol/panel/CardWrapperImpl";
     static final String HELPER = "TLiteNC";
+    static final java.util.Set<String> CARD_SETTERS = new java.util.HashSet<String>(java.util.Arrays.asList(
+            "setInt", "setLong", "setBoolean", "setString"));
 
     static boolean doPackets;
     static int hits;
+    static boolean doCardCap;
+    static int cardHits;
 
     public static void main(String[] args) throws Exception {
         if (args.length < 4) {
             System.err.println("usage: PatchNC <in.zip> <out.zip> <patches> <TLiteNC.class>");
-            System.err.println("patches: packets");
+            System.err.println("patches: packets, cardcap");
             System.exit(2);
         }
         for (String p : args[2].split(",")) {
             p = p.trim();
             if (p.equals("packets")) doPackets = true;
+            else if (p.equals("cardcap")) doCardCap = true;
             else throw new IllegalArgumentException("unknown patch: " + p);
         }
 
@@ -44,6 +55,7 @@ public class PatchNC {
             byte[] d = readAll(zf.getInputStream(ze));
             String n = ze.getName();
             if (doPackets && n.equals(PROXY + ".class")) d = patch(d);
+            if (doCardCap && n.equals(WRAPPER + ".class")) d = patchCardCap(d);
             out.put(n, d);
         }
         zf.close();
@@ -54,6 +66,8 @@ public class PatchNC {
 
         if (doPackets && hits != 4)
             throw new IllegalStateException("packets: expected 4 getBlockTileEntity lookups, patched " + hits);
+        if (doCardCap && cardHits != 4)
+            throw new IllegalStateException("cardcap: expected 4 card setters, patched " + cardHits);
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -83,6 +97,28 @@ public class PatchNC {
                 hits++;
             }
             m.maxStack += 1;
+        }
+        return write(cn);
+    }
+
+    /** Prepend to each card setter: if (!TLiteNC.allowCardField(this.card, name)) return; name is arg 1. */
+    static byte[] patchCardCap(byte[] in) {
+        ClassNode cn = read(in);
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!CARD_SETTERS.contains(m.name)) continue;
+            LabelNode ok = new LabelNode();
+            InsnList g = new InsnList();
+            g.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            g.add(new FieldInsnNode(Opcodes.GETFIELD, WRAPPER, "card", "Lur;"));
+            g.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            g.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "allowCardField", "(Lur;Ljava/lang/String;)Z", false));
+            g.add(new JumpInsnNode(Opcodes.IFNE, ok));
+            g.add(new InsnNode(Opcodes.RETURN));
+            g.add(ok);
+            m.instructions.insert(g);
+            m.maxStack = Math.max(m.maxStack, 2);
+            cardHits++;
         }
         return write(cn);
     }
