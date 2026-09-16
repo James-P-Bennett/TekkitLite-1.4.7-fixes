@@ -18,7 +18,7 @@ Each patch is selectable individually.
 | [BuildCraft 3.4.3](#buildcraft-343) | `quarry` · `filler` · `quarrychunks` |
 | [ComputerCraft 1.5](#computercraft-15) | `turtle` · `packets` · `http` |
 | [immibis-core 52.4.6](#immibis-core-5246-tubestuff) (Tubestuff) | `mergenbt` |
-| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` · `netevent` · `sorter` · `tesla` |
+| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `explosion` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` · `netevent` · `sorter` · `tesla` |
 | [ThermalExpansion 2.2.2.2](#thermalexpansion-2222) | `packets` |
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
 | [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` · `requestclamp` · `security` |
@@ -528,6 +528,64 @@ as able to "bypass anti-grief".
 **Verified** with a beam straight down onto stone, and an Explosive shot onto a 3x3x3 stone cube,
 inside another player's claim. Stock mined the block and the explosion destroyed 9 of the 27.
 Patched left the block and all 27, and still mined the block and destroyed 9 on open ground.
+
+</details>
+
+<details>
+<summary><b><code>explosion</code>: Nuke and Industrial TNT ignore claims and crash the server (protection, crash)</b></summary>
+
+**The bug.** Every IC2 explosion (Nuke, Industrial TNT, reactor meltdown) runs through
+`ExplosionIC2.doExplosion`, which removes blocks straight through the world with `world.setBlock`
+and never fires the Bukkit `EntityExplodeEvent`. GriefPrevention, WorldGuard and the
+TekkitCustomizer `ProtectSurfaceFromExplosives` option all filter that event, so none of them saw
+an IC2 explosion: a nuke or ITNT blew up claims and surface builds the same rules protect from
+vanilla TNT. Both were banned for it.
+
+There is also a stock crash: `ExplosionIC2.shootRay` runs a binary search over the entities it
+collected, but it only collects `EntityLiving` and `EntityItem`, while it decides to run the
+search from the raw area query, which also holds the explosive itself and any players (a player is
+not an `EntityLiving` in 1.4.7). Detonated near a lone player with no mobs or items in range, the
+search does `get(0)` on an empty list and throws, crashing the server with a ticking-entity error.
+
+**The patch (`TLiteFixes` coremod, IC2 is signed).**
+
+- Before the removal loop, `TLiteIC2.ic2ExplodeFilter` fires a real `EntityExplodeEvent` with the
+  blocks the explosion is about to take, lets the plugins trim the list exactly as they do for
+  vanilla TNT (claimed blocks, and above-surface wilderness where that option is on), then drops
+  every trimmed block so the explosion removes only what survived. The exploding entity is the
+  igniter when online, else an offline fake player; explosions protect all claims regardless of
+  who set them off. Entity damage and the boom effect are unchanged, the same as TNT under GP. The
+  Mining Laser's Explosive mode is excluded, since `laser` already checks it per block.
+- `shootRay`'s entity-kill block is skipped whenever the collected entity list is empty, so the
+  binary search never runs on nothing.
+- On a nuke bomb detonation (only, not ITNT or reactor meltdowns) a server-wide alert is
+  broadcast: `☢ <player> set off a Nuke at x,y,z!`.
+
+With this in place **Industrial TNT is unbanned with crafting re-enabled** (`IC2.cfg`
+`enableCraftingITnt`). The **Nuke is left banned by choice**: the fixes make it claim-safe and
+crash-safe, but like any explosion it still hurts players (server `pvp=false` does not gate TNT or
+nuke explosion damage, since the blast is not attributed to the igniting player), and it stays a
+policy/balance ban. The fixes still apply to it whenever one is set off (admin or creative), and to
+reactor meltdowns, which run the same `ExplosionIC2`. This server's `explosionPowerNuke` is `4.0`
+and the separate reactor cap `explosionPowerReactorMax` is `2.0`.
+
+GriefPrevention's per-claim explosives toggle is honored: it strips claimed blocks unless the
+owner has enabled explosives for that claim (`/claimexplosions`, `Claim.areExplosivesAllowed`),
+which is off by default. So a nuke set off inside or outside a claim does no block damage there
+until the owner opts in. To catch that opt-in case, the TekkitLiteCustomizer plugin warns a player
+who places a Nuke block (237) inside a claim that currently has explosives enabled, so they know
+it will actually damage the claim. The plugin reads GriefPrevention through a `MethodHandles`
+bridge (`ClaimQuery`) rather than `getField`, since GriefPrevention has a Vault `Economy` field
+and this server has no Vault; enumerating its members would otherwise fail.
+
+**Verified** on the test server (`tlfix explode`): a power-4.0 nuke destroyed **0 of 6** claimed
+blocks detonated one block outside a claim border, and **0 of 13** detonated at the claim's centre,
+on the patched coremod, versus **1 of 6** and **3 of 13** on stock; both destroyed open-ground
+blocks, and the coremod logged the broadcast `☢ Intruder set off a Nuke at 233,31,252!`. The build
+check also confirms `ExplosionIC2` is patched at all three sites (per-block laser check, the
+explode-event filter, and the crash guard). The placement warning's claim check was verified too
+(`tlfix nukewarn`): the plugin's `ClaimQuery` read `false` with explosives off, `true` with them
+on, and `false` in the wilderness, on a server with GriefPrevention and no Vault.
 
 </details>
 
@@ -1055,7 +1113,7 @@ dimension id crashed the link server-side.
 | Turtles placing vanilla blocks | MCPC+ asks plugins as the player "ComputerCraft" when a turtle places a vanilla block, so an owner's turtle may be refused in their own claim. Not checked. |
 | IC2 Terraformer changing terrain in claims | A placed Terraformer edits blocks in a radius with no owner; like MFFS it would need owner-tracking that its code does not make available cleanly. Recommend a ban or server-policy decision. |
 | Tampered on-disk NBT crashing one chunk/tile load (Factorization slots, ACT Mk II recipe, immibis chunk loader shape, Mystcraft legacy biome) | Only reachable if the region file is already edited or corrupt, not by a player in game. Left as defensive hardening, not applied. |
-| Balance and lag bans: Nuke, Industrial TNT, alarms, chunk loaders | Server policy rather than bugs. Left to config and plugins. |
+| Balance and lag bans: Nuke, alarms, chunk loaders | Server policy rather than bugs. The Nuke is now crash-fixed and claim-safe (see `explosion`) but kept banned by choice; the rest are left to config and plugins. |
 
 ---
 

@@ -1,6 +1,6 @@
 name: TekkitLiteCustomizer
 main: me.ryanhamshire.TekkitCustomizer.TekkitCustomizer
-softdepend: [Multiverse-Core, My Worlds, Transporter, MystCraft]
+softdepend: [Multiverse-Core, My Worlds, Transporter, MystCraft, GriefPrevention]
 version: 1.6
 commands:
    blockinfo:

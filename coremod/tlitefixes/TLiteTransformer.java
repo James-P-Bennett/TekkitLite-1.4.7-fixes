@@ -168,24 +168,93 @@ public class TLiteTransformer implements IClassTransformer {
         return hits == 1;
     }
 
-    /** doExplosion(): the only ys.a(III)I call has [cache, x, y, z]; this is pushed after them. */
+    /**
+     * doExplosion(): the only ys.a(III)I call has [cache, x, y, z]; this is pushed after them, so
+     * the Mining Laser explode mode can be checked per block (explosionBlockId). Before the removal
+     * loop (getfield destroyedBlockPositions, entrySet) a call to TLiteIC2.ic2ExplodeFilter fires a
+     * Bukkit EntityExplodeEvent for nuke, Industrial TNT and reactor explosions so GriefPrevention
+     * and WorldGuard trim the blocks exactly as for vanilla TNT.
+     *
+     * shootRay(): the entity-kill block runs a binary search over entitiesInRange whenever
+     * killEntities is set, but killEntities is gated on the raw AABB (which holds the explosive
+     * itself and players, neither added to entitiesInRange), so near a lone player the search does
+     * get(0) on an empty list and crashes the server (ticking entity). The block is guarded so it
+     * is skipped whenever entitiesInRange is empty.
+     */
     static boolean patchExplosion(ClassNode cn) {
-        int hits = 0;
+        int blockId = 0, filter = 0, crash = 0;
         for (Object mo : cn.methods) {
             MethodNode m = (MethodNode) mo;
-            if (!m.name.equals("doExplosion") || !m.desc.equals("()V")) continue;
-            for (AbstractInsnNode i : m.instructions.toArray()) {
-                if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
-                MethodInsnNode mi = (MethodInsnNode) i;
-                if (!mi.owner.equals("ys") || !mi.name.equals("a") || !mi.desc.equals("(III)I")) continue;
-                m.instructions.insertBefore(mi, new VarInsnNode(Opcodes.ALOAD, 0));
-                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", "explosionBlockId",
-                        "(Lys;IIIL" + EXPLOSION + ";)I"));
-                m.maxStack += 1;
-                hits++;
+
+            if (m.name.equals("doExplosion") && m.desc.equals("()V")) {
+                for (AbstractInsnNode i : m.instructions.toArray()) {
+                    if (i.getOpcode() == Opcodes.INVOKEVIRTUAL) {
+                        MethodInsnNode mi = (MethodInsnNode) i;
+                        if (mi.owner.equals("ys") && mi.name.equals("a") && mi.desc.equals("(III)I")) {
+                            m.instructions.insertBefore(mi, new VarInsnNode(Opcodes.ALOAD, 0));
+                            m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", "explosionBlockId",
+                                    "(Lys;IIIL" + EXPLOSION + ";)I"));
+                            m.maxStack += 1;
+                            blockId++;
+                        }
+                    }
+                    if (i.getOpcode() == Opcodes.GETFIELD) {
+                        FieldInsnNode fi = (FieldInsnNode) i;
+                        if (fi.owner.equals(EXPLOSION) && fi.name.equals("destroyedBlockPositions")) {
+                            AbstractInsnNode next = skipMeta(fi.getNext());
+                            if (next != null && next.getOpcode() == Opcodes.INVOKEINTERFACE
+                                    && ((MethodInsnNode) next).name.equals("entrySet")) {
+                                InsnList c = new InsnList();
+                                c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                                c.add(new FieldInsnNode(Opcodes.GETFIELD, EXPLOSION, "worldObj", "Lyc;"));
+                                c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                                c.add(new FieldInsnNode(Opcodes.GETFIELD, EXPLOSION, "explosionX", "D"));
+                                c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                                c.add(new FieldInsnNode(Opcodes.GETFIELD, EXPLOSION, "explosionY", "D"));
+                                c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                                c.add(new FieldInsnNode(Opcodes.GETFIELD, EXPLOSION, "explosionZ", "D"));
+                                c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                                c.add(new FieldInsnNode(Opcodes.GETFIELD, EXPLOSION, "igniter", "Ljava/lang/String;"));
+                                c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                                c.add(new FieldInsnNode(Opcodes.GETFIELD, EXPLOSION, "destroyedBlockPositions", "Ljava/util/Map;"));
+                                c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                                c.add(new FieldInsnNode(Opcodes.GETFIELD, EXPLOSION, "damageSource", "Llh;"));
+                                c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", "ic2ExplodeFilter",
+                                        "(Lyc;DDDLjava/lang/String;Ljava/util/Map;Llh;)V"));
+                                m.instructions.insertBefore(fi, c);
+                                m.maxStack = Math.max(m.maxStack, 10);
+                                filter++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (m.name.equals("shootRay") && m.desc.equals("(DDDDDDZ)V")) {
+                for (AbstractInsnNode i : m.instructions.toArray()) {
+                    if (i.getOpcode() != Opcodes.ILOAD || ((VarInsnNode) i).var != 13) continue;
+                    AbstractInsnNode next = skipMeta(i.getNext());
+                    if (next == null || next.getOpcode() != Opcodes.IFEQ) continue;
+                    LabelNode skip = ((JumpInsnNode) next).label;
+                    InsnList c = new InsnList();
+                    c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    c.add(new FieldInsnNode(Opcodes.GETFIELD, EXPLOSION, "entitiesInRange", "Ljava/util/List;"));
+                    c.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, "java/util/List", "isEmpty", "()Z"));
+                    c.add(new JumpInsnNode(Opcodes.IFNE, skip));
+                    m.instructions.insertBefore(i, c);
+                    m.maxStack = Math.max(m.maxStack, 1);
+                    crash++;
+                }
             }
         }
-        return hits == 1;
+        return blockId == 1 && filter == 1 && crash == 1;
+    }
+
+    /** Next real instruction, skipping labels, line numbers and frames. */
+    static AbstractInsnNode skipMeta(AbstractInsnNode n) {
+        while (n != null && (n.getType() == AbstractInsnNode.LABEL || n.getType() == AbstractInsnNode.LINE
+                || n.getType() == AbstractInsnNode.FRAME)) n = n.getNext();
+        return n;
     }
 
     /** Adds the slotClick override; refuses when ContainerBag already has one. */

@@ -22,6 +22,7 @@ import com.pahimar.ee3.network.packet.PacketRequestEvent;
 import factorization.common.Core;
 
 import me.ryanhamshire.GriefPrevention.GriefPrevention;
+import me.ryanhamshire.GriefPrevention.Claim;
 
 import bspkrs.treecapitator.fml.TreeCapitatorMod;
 
@@ -103,7 +104,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -141,6 +142,8 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("ncflood")) ncflood(sender);
             else if (s.equals("apmdupe")) apmdupe(sender);
             else if (s.equals("tesla")) tesla(sender);
+            else if (s.equals("explode")) explode(sender);
+            else if (s.equals("nukewarn")) nukewarn(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -1118,6 +1121,108 @@ public class TLFixTest extends JavaPlugin {
         }
         sender.sendMessage(TAG + "tesla: noPlayerDamage=" + np + ", denyMobDrops=" + dd + "; " + handler
                 + "  (expect true, true; coil cancelled=true, other=false)");
+    }
+
+    /**
+     * Detonates an IC2 nuke ExplosionIC2 one block outside a GriefPrevention claim border and
+     * checks that claimed blocks are untouched while open-ground blocks are destroyed. Runs below
+     * sea level in a carved air pocket, so GP's surface-explosion strip does not mask the claim
+     * check and the blast is not muffled by surrounding stone. Stock (no coremod) destroys both
+     * sides; the patched coremod fires EntityExplodeEvent so GP strips only the claimed blocks.
+     */
+    private void explode(CommandSender sender) {
+        yc w = world();
+        org.bukkit.World bw = getServer().getWorlds().get(0);
+        Location spawn = bw.getSpawnLocation();
+        int cx = spawn.getBlockX(), cz = spawn.getBlockZ();
+        int y0 = 30;                                                     // below sea level
+        for (int dx = -1; dx <= 2; dx++) bw.loadChunk((cx + dx * 16) >> 4, cz >> 4);
+
+        Location at = new Location(bw, cx, y0, cz);
+        if (GriefPrevention.instance.dataStore.getClaimAt(at, true, null) == null) {
+            GriefPrevention.instance.dataStore.createClaim(bw,
+                    cx - 8, cx + 8, 0, 255, cz - 8, cz + 8, "Owner", null, null);
+        }
+        int border = cx + 8;                                             // last claimed x
+
+        // Carve an air pocket, then lay a stone row from inside the claim to open ground.
+        for (int x = cx + 2; x <= cx + 17; x++) for (int dy = -2; dy <= 3; dy++) for (int dz = -2; dz <= 2; dz++)
+            w.e(x, y0 + dy, cz + dz, 0);
+        for (int x = cx + 3; x <= cx + 15; x++) w.e(x, y0, cz, 1);       // stone row
+
+        int claimBefore = 0, openBefore = 0;
+        for (int x = cx + 3; x <= border; x++) if (w.a(x, y0, cz) == 1) claimBefore++;
+        for (int x = border + 1; x <= cx + 15; x++) if (w.a(x, y0, cz) == 1) openBefore++;
+
+        // Nuke bomb one block outside the border, in the air just above the row, at power 4.0.
+        ic2.core.ExplosionIC2 ex = new ic2.core.ExplosionIC2(
+                w, null, (border + 1) + 0.5, y0 + 1 + 0.5, cz + 0.5, 4.0F, 0.3F, 1.5F,
+                ic2.core.IC2DamageSource.nuke, "Intruder");
+        ex.doExplosion();
+
+        int claimAfter = 0, openAfter = 0;
+        for (int x = cx + 3; x <= border; x++) if (w.a(x, y0, cz) == 1) claimAfter++;
+        for (int x = border + 1; x <= cx + 15; x++) if (w.a(x, y0, cz) == 1) openAfter++;
+
+        clear(w, cx + 9, y0, cz, 12);
+
+        // Second case: detonate INSIDE the claim (origin at the centre), explosives disabled (default).
+        for (int x = cx - 6; x <= cx + 6; x++) for (int dy = -2; dy <= 3; dy++) for (int dz = -2; dz <= 2; dz++)
+            w.e(x, y0 + dy, cz + dz, 0);
+        for (int x = cx - 6; x <= cx + 6; x++) w.e(x, y0, cz, 1);
+        int inBefore = 0;
+        for (int x = cx - 6; x <= cx + 6; x++) if (w.a(x, y0, cz) == 1) inBefore++;
+        ic2.core.ExplosionIC2 ex2 = new ic2.core.ExplosionIC2(
+                w, null, cx + 0.5, y0 + 1 + 0.5, cz + 0.5, 4.0F, 0.3F, 1.5F,
+                ic2.core.IC2DamageSource.nuke, "Intruder");
+        ex2.doExplosion();
+        int inAfter = 0;
+        for (int x = cx - 6; x <= cx + 6; x++) if (w.a(x, y0, cz) == 1) inAfter++;
+        clear(w, cx, y0, cz, 12);
+
+        sender.sendMessage(TAG + "explode: outside-border claimed " + (claimBefore - claimAfter) + "/" + claimBefore
+                + " destroyed, open " + (openBefore - openAfter) + "/" + openBefore + " destroyed"
+                + "; inside-claim claimed " + (inBefore - inAfter) + "/" + inBefore + " destroyed"
+                + "  (fixed: 0 claimed both cases, open some; stock: claimed damaged)");
+    }
+
+    /**
+     * Drives the real TekkitLiteCustomizer ClaimQuery (the nuke-placement warning's claim check)
+     * through its own plugin class loader against a live claim, toggling GriefPrevention's
+     * per-claim explosives flag. Confirms it reads true only when explosives are enabled and false
+     * in the wilderness, on a server with GriefPrevention but no Vault.
+     */
+    private void nukewarn(CommandSender sender) throws Exception {
+        org.bukkit.World bw = getServer().getWorlds().get(0);
+        Location spawn = bw.getSpawnLocation();
+        int cx = spawn.getBlockX(), cz = spawn.getBlockZ();
+        bw.loadChunk(cx >> 4, cz >> 4);
+        Location at = new Location(bw, cx, 30, cz);
+        Claim claim = GriefPrevention.instance.dataStore.getClaimAt(at, true, null);
+        if (claim == null) {
+            GriefPrevention.instance.dataStore.createClaim(bw, cx - 8, cx + 8, 0, 255, cz - 8, cz + 8, "Owner", null, null);
+            claim = GriefPrevention.instance.dataStore.getClaimAt(at, true, null);
+        }
+
+        org.bukkit.plugin.Plugin plug = getServer().getPluginManager().getPlugin("TekkitLiteCustomizer");
+        if (plug == null || claim == null) {
+            sender.sendMessage(TAG + "nukewarn: setup failed (plugin=" + plug + ", claim=" + claim + ")");
+            return;
+        }
+        java.lang.reflect.Method m = plug.getClass().getClassLoader()
+                .loadClass("me.ryanhamshire.TekkitCustomizer.ClaimQuery")
+                .getDeclaredMethod("explosionsAllowedAt", Location.class);
+        m.setAccessible(true);
+
+        claim.areExplosivesAllowed = false;
+        boolean off = ((Boolean) m.invoke(null, at)).booleanValue();
+        claim.areExplosivesAllowed = true;
+        boolean on = ((Boolean) m.invoke(null, at)).booleanValue();
+        boolean wild = ((Boolean) m.invoke(null, new Location(bw, cx + 500, 30, cz + 500))).booleanValue();
+        claim.areExplosivesAllowed = false;
+
+        sender.sendMessage(TAG + "nukewarn: explosionsAllowedAt off=" + off + ", on=" + on + ", wilderness=" + wild
+                + "  (expect false, true, false)");
     }
 
     /** APM Battery Station dupe guard: only stackable (same) items merge into the output slot. */

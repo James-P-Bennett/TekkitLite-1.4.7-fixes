@@ -77,6 +77,84 @@ public class TLiteIC2 {
         return id;
     }
 
+    /**
+     * Injected at the top of ExplosionIC2.doExplosion's removal loop, for every IC2 explosion that
+     * is not a Mining Laser shot (nuke, Industrial TNT, reactor meltdown). IC2 removes blocks
+     * straight through the world and never fires the Bukkit EntityExplodeEvent, so GriefPrevention
+     * and WorldGuard never see it. This fires that event with the blocks the explosion is about to
+     * take, lets the plugins trim the list exactly as they do for vanilla TNT (claimed blocks and,
+     * with BlockSurfaceOtherExplosions on, above-surface wilderness), then drops every trimmed
+     * position from destroyedBlockPositions so the mod's own loop only removes what survived.
+     *
+     * The exploding entity for the event is the igniter's player when online, else an offline fake
+     * player; the plugins protect all claims from any explosion regardless, so the identity only
+     * sets the creeper-vs-other classification (always "other" here). Entity damage and the boom
+     * effect are unchanged, the same as vanilla TNT under GriefPrevention. On any failure the
+     * explosion is left as stock rather than risk an inconsistent removal.
+     */
+    public static void ic2ExplodeFilter(yc world, double x, double y, double z, String igniter, java.util.Map positions, lh damageSource) {
+        try {
+            if (laserExplosion) {
+                return; // laser Explosive mode is already checked per block by explosionBlockId
+            }
+            if (world == null || world.I) {
+                return; // server side only
+            }
+            // Server-wide alert for a nuke bomb detonation (not ITNT or reactor meltdowns).
+            if (damageSource == ic2.core.IC2DamageSource.nuke) {
+                String who = (igniter == null || igniter.length() == 0) ? "Someone" : igniter;
+                org.bukkit.Bukkit.broadcastMessage("§c☢ " + who + " set off a Nuke at "
+                        + (int) x + "," + (int) y + "," + (int) z + "!");
+            }
+            if (positions == null || positions.isEmpty()) {
+                return;
+            }
+            org.bukkit.World bworld = world.getWorld();
+            if (bworld == null) {
+                return;
+            }
+
+            org.bukkit.entity.Entity who = null;
+            if (igniter != null && igniter.length() > 0) {
+                who = org.bukkit.Bukkit.getPlayerExact(igniter);
+            }
+            if (who == null) {
+                iq fake = CraftFakePlayer.get(world, (igniter == null || igniter.length() == 0) ? "[IC2]" : igniter, false);
+                who = (org.bukkit.entity.Entity) fake.getBukkitEntity();
+            }
+
+            java.util.List blocks = new java.util.ArrayList();
+            for (java.util.Iterator it = positions.keySet().iterator(); it.hasNext(); ) {
+                yv p = (yv) it.next();
+                blocks.add(bworld.getBlockAt(p.a, p.b, p.c));
+            }
+
+            org.bukkit.event.entity.EntityExplodeEvent ev = new org.bukkit.event.entity.EntityExplodeEvent(
+                    who, new org.bukkit.Location(bworld, x, y, z), blocks, 1.0F);
+            org.bukkit.Bukkit.getPluginManager().callEvent(ev);
+
+            if (ev.isCancelled()) {
+                positions.clear();
+                return;
+            }
+
+            java.util.HashSet survivors = new java.util.HashSet();
+            java.util.List kept = ev.blockList();
+            for (int i = 0; i < kept.size(); i++) {
+                org.bukkit.block.Block b = (org.bukkit.block.Block) kept.get(i);
+                survivors.add(b.getX() + ":" + b.getY() + ":" + b.getZ());
+            }
+            for (java.util.Iterator it = positions.keySet().iterator(); it.hasNext(); ) {
+                yv p = (yv) it.next();
+                if (!survivors.contains(p.a + ":" + p.b + ":" + p.c)) {
+                    it.remove();
+                }
+            }
+        } catch (Throwable t) {
+            // Leave the explosion as stock on any failure.
+        }
+    }
+
     /** TLiteProtect as the laser's owner. A laser with no player owner is refused. */
     private static boolean allowed(md owner, yc world, int x, int y, int z, String what) {
         if (!(owner instanceof qx) || world == null) {
