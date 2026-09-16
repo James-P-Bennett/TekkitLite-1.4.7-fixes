@@ -37,7 +37,7 @@ public class PatchDA {
     static boolean doSpot;
     static int spotHits;
     static boolean doQuota;
-    static int claimHits, releaseHits, announceHits;
+    static int claimHits, releaseHits, announceHits, tickHits;
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
@@ -60,6 +60,7 @@ public class PatchDA {
             byte[] d = readAll(zf.getInputStream(ze));
             String n = ze.getName();
             if (doSpot && n.equals(TILE + ".class")) d = patchSpot(d);
+            if (doQuota && n.equals(TILE + ".class")) d = patchTick(d);
             if (doQuota && n.equals(WORLDINFO + ".class")) d = patchQuota(d);
             if (doQuota && n.equals(BLOCK + ".class")) d = patchAnnounce(d);
             out.put(n, d);
@@ -72,9 +73,9 @@ public class PatchDA {
 
         if (doSpot && spotHits != 1)
             throw new IllegalStateException("spotloader: expected to patch 1 limitRadius, patched " + spotHits);
-        if (doQuota && (claimHits != 1 || releaseHits != 2 || announceHits != 1))
-            throw new IllegalStateException("combinedquota: expected 1 addLoader, 2 releases, 1 announce, patched "
-                    + claimHits + ", " + releaseHits + ", " + announceHits);
+        if (doQuota && (claimHits != 1 || releaseHits != 2 || announceHits != 1 || tickHits != 1))
+            throw new IllegalStateException("combinedquota: expected 1 addLoader, 2 releases, 1 announce, 1 tick, patched "
+                    + claimHits + ", " + releaseHits + ", " + announceHits + ", " + tickHits);
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -168,6 +169,27 @@ public class PatchDA {
             m.instructions.insertBefore(last, c);
             m.maxStack = Math.max(m.maxStack, 4);
             announceHits++;
+        }
+        return write(cn);
+    }
+
+    /**
+     * At the top of the anchor's updateEntity (obf g()), call TLiteChunkQuota.daTick(this), which
+     * drives setActive from the owner's online/grace state each tick (server-side, reflective). The
+     * anchor otherwise never re-checks activation once loaded when fuel is off, so it would never
+     * shut down on logout or come back on login without this.
+     */
+    static byte[] patchTick(byte[] in) {
+        ClassNode cn = read(in);
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("g") || !m.desc.equals("()V")) continue;
+            InsnList c = new InsnList();
+            c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, QUOTA, "daTick", "(Ljava/lang/Object;)V", false));
+            m.instructions.insert(c);
+            m.maxStack = Math.max(m.maxStack, 1);
+            tickHits++;
         }
         return write(cn);
     }
