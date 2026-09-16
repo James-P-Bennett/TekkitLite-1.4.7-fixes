@@ -1,38 +1,43 @@
-import java.io.File;
-import java.io.FileInputStream;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
+
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
 
 import codechicken.chunkloader.ChunkLoaderManager;
 import codechicken.chunkloader.IChickenChunkLoader;
 import codechicken.core.BlockCoord;
+import codechicken.core.CommonUtils;
 
 /**
- * ChunkLoaderConversion: one authoritative per-player cap across every chunk loader.
+ * ChunkLoaderConversion: one authoritative per-player cap and registry across every chunk loader.
  *
- * ChickenChunks and immibis Dimensional Anchors each track their own per-player quota, so without
- * this a player could load a full ChickenChunks allowance and a separate anchor allowance on top.
- * Both mods' loaders are pinned to a single chunk each (the spotloader patches), so counting
- * loaders is counting chunks. This class keeps one shared set of loaded chunks per owner, and each
- * mod's register and unregister runs through it: a loader that would take the owner past the limit
- * does not register, so it loads nothing.
+ * ChickenChunks, immibis Dimensional Anchors and the AdditionalPipes Tether all register here, so a
+ * player's loaders share a single per-player limit (ChickenChunks.cfg players{}, default 6, or the
+ * chunkloader.maxchunksperplayer override in config/ChunkLoaderConversion.cfg; 0 means no cap).
+ * Every loader is a single chunk (the spotloader patches), so counting loaders is counting chunks.
+ * A loader over the limit registers but is not allowed to load (active=false).
  *
- * The limit is the owner's ChickenChunks per-player limit (ChickenChunks.cfg players{}), which
- * stays authoritative, unless config/ChunkLoaderConversion.cfg sets chunkloader.maxchunksperplayer
- * to a value of 0 or more (0 meaning no cap, matching ChickenChunks). Server-owned or ownerless
- * loaders are never capped.
+ * The registry also backs the /loaders command and the placement messages: it remembers each
+ * owner's loaders by world and position with an on/off flag. It is in memory and rebuilds as
+ * loaders re-register on world load, so a restart heals any drift; a listing therefore covers a
+ * player's currently loaded loaders reliably and anything active while they are online.
  *
- * The counter is in memory and rebuilds as loaders re-register on world load, so a restart heals
- * any drift and every failure mode is a conservative under-count, never an over-count. The immibis
- * tile is reached as a vanilla TileEntity (any: k = worldObj, l/m/n = coords) for its world and
- * position, which the class needs without a compile dependency on the anchor mod.
+ * Bukkit is used for the online check and chat (Bukkit.getPlayerExact / sendMessage), and
+ * CodeChickenCore's CommonUtils for the world name; both are on the shared class loader at runtime.
+ * The immibis tile is reached as a vanilla TileEntity (any: k = worldObj, l/m/n = coords).
  */
 public class TLiteChunkQuota {
 
-    private static final Map<String, Set<String>> byOwner = new HashMap<String, Set<String>>();
+    private static final class Loader {
+        final String world;
+        final int x, y, z;
+        boolean active;
+        Loader(String world, int x, int y, int z) { this.world = world; this.x = x; this.y = y; this.z = z; }
+    }
+
+    /** owner -> (key -> loader), insertion ordered so a listing is stable. */
+    private static final Map<String, Map<String, Loader>> reg = new LinkedHashMap<String, Map<String, Loader>>();
 
     // ------------------------------------------------------------ ChickenChunks
 
@@ -41,75 +46,158 @@ public class TLiteChunkQuota {
         String owner = l.getOwner();
         if (owner == null) return true;
         BlockCoord p = l.getPosition();
-        return claim(owner, key(System.identityHashCode(l.getWorld()), p.x, p.y, p.z));
+        return claim(owner, worldName(l.getWorld()), p.x, p.y, p.z);
     }
 
-    /** ChunkLoaderManager.remChunkLoader: drop this loader's chunk from the owner's count. */
+    /** ChunkLoaderManager.remChunkLoader: drop this loader from the owner's registry. */
     public static synchronized void ccRelease(IChickenChunkLoader l) {
         String owner = l.getOwner();
         if (owner == null) return;
         BlockCoord p = l.getPosition();
-        release(owner, key(System.identityHashCode(l.getWorld()), p.x, p.y, p.z));
+        release(owner, worldName(l.getWorld()), p.x, p.y, p.z);
+    }
+
+    /** BlockChunkLoader.onBlockPlacedBy hook: register the placement and message the placer. */
+    public static synchronized void ccAnnounce(IChickenChunkLoader l) {
+        announce(l.getOwner(), ccClaim(l));
     }
 
     // ------------------------------------------------------------ Dimensional Anchors
 
-    /** WorldInfo.addLoader: true lets the real add run, false skips it. Arg is a TileChunkLoader. */
     public static synchronized boolean daClaim(Object tile) {
         any te = (any) tile;
         String owner = daOwner(te);
         if (owner == null) return true;
-        return claim(owner, key(System.identityHashCode(te.k), te.l, te.m, te.n));
+        return claim(owner, worldName(te.k), te.l, te.m, te.n);
     }
 
-    /** WorldInfo.removeLoader and delayRemoveLoader. Arg is a TileChunkLoader. */
     public static synchronized void daRelease(Object tile) {
         any te = (any) tile;
         String owner = daOwner(te);
         if (owner == null) return;
-        release(owner, key(System.identityHashCode(te.k), te.l, te.m, te.n));
+        release(owner, worldName(te.k), te.l, te.m, te.n);
     }
 
-    /** The anchor's public owner field, read reflectively so this class needs no anchor import. */
+    public static synchronized void daAnnounce(Object tile) {
+        announce(daOwner((any) tile), daClaim(tile));
+    }
+
     private static String daOwner(Object tile) {
         try {
-            Object o = tile.getClass().getField("owner").get(tile);
-            return (String) o;
+            return (String) tile.getClass().getField("owner").get(tile);
         } catch (Throwable t) {
             return null;
         }
     }
 
-    // ------------------------------------------------------------ shared counter
+    // ------------------------------------------------------------ AdditionalPipes (via TLiteAP)
 
-    private static boolean claim(String owner, String key) {
-        Set<String> s = byOwner.get(owner);
-        if (s == null) { s = new HashSet<String>(); byOwner.put(owner, s); }
-        if (s.contains(key)) return true;          // already counted (reactivation)
-        int lim = limit(owner);
-        if (lim <= 0) { s.add(key); return true; } // 0 or less: no cap
-        if (s.size() >= lim) return false;
-        s.add(key);
-        return true;
+    public static synchronized boolean apClaim(String owner, Object world, int x, int y, int z) {
+        if (owner == null) return true;
+        return claim(owner, worldName(world), x, y, z);
     }
 
-    private static void release(String owner, String key) {
-        Set<String> s = byOwner.get(owner);
-        if (s != null) {
-            s.remove(key);
-            if (s.isEmpty()) byOwner.remove(owner);
+    public static synchronized void apRelease(String owner, Object world, int x, int y, int z) {
+        if (owner == null) return;
+        release(owner, worldName(world), x, y, z);
+    }
+
+    public static synchronized void apAnnounce(String owner, Object world, int x, int y, int z) {
+        if (owner == null) return;
+        announce(owner, claim(owner, worldName(world), x, y, z));
+    }
+
+    // ------------------------------------------------------------ registry core
+
+    private static boolean claim(String owner, String world, int x, int y, int z) {
+        Map<String, Loader> m = reg.get(owner);
+        if (m == null) { m = new LinkedHashMap<String, Loader>(); reg.put(owner, m); }
+        String k = world + ":" + x + ":" + y + ":" + z;
+        Loader ld = m.get(k);
+        if (ld == null) { ld = new Loader(world, x, y, z); m.put(k, ld); }
+        int lim = limit(owner);
+        if (lim <= 0) {
+            ld.active = true;
+            return true;
+        }
+        int othersActive = 0;
+        for (Loader o : m.values()) {
+            if (o != ld && o.active) othersActive++;
+        }
+        ld.active = othersActive < lim;
+        return ld.active;
+    }
+
+    private static void release(String owner, String world, int x, int y, int z) {
+        Map<String, Loader> m = reg.get(owner);
+        if (m == null) return;
+        m.remove(world + ":" + x + ":" + y + ":" + z);
+        if (m.isEmpty()) reg.remove(owner);
+    }
+
+    private static void announce(String owner, boolean active) {
+        if (owner == null) return;
+        try {
+            Player p = Bukkit.getPlayerExact(owner);
+            if (p == null) return;
+            int lim = limit(owner);
+            if (active) {
+                p.sendMessage("§eChunk loaders: " + activeCount(owner) + "/" + lim + ".");
+            } else {
+                p.sendMessage("§cThis chunk loader is disabled: you are at your limit (" + lim + "/" + lim + ").");
+            }
+        } catch (Throwable t) {
+            // messaging is best effort
         }
     }
 
-    private static String key(int worldHash, int x, int y, int z) {
-        return worldHash + ":" + x + ":" + y + ":" + z;
+    // ------------------------------------------------------------ queries (for /loaders and login notice)
+
+    public static synchronized int activeCount(String owner) {
+        Map<String, Loader> m = reg.get(owner);
+        if (m == null) return 0;
+        int n = 0;
+        for (Loader o : m.values()) if (o.active) n++;
+        return n;
+    }
+
+    /** How many of the owner's loaders are off because the owner is over the limit. */
+    public static synchronized int disabledCount(String owner) {
+        Map<String, Loader> m = reg.get(owner);
+        if (m == null) return 0;
+        int n = 0;
+        for (Loader o : m.values()) if (!o.active) n++;
+        return n;
+    }
+
+    public static synchronized int limitFor(String owner) {
+        return limit(owner);
+    }
+
+    /** Lines for the /loaders listing: "world 12,64,-88 status: on". */
+    public static synchronized java.util.List<String> describe(String owner) {
+        java.util.List<String> out = new java.util.ArrayList<String>();
+        Map<String, Loader> m = reg.get(owner);
+        if (m == null) return out;
+        for (Loader o : m.values()) {
+            out.add(o.world + " " + o.x + "," + o.y + "," + o.z + " status: " + (o.active ? "on" : "off"));
+        }
+        return out;
+    }
+
+    private static String worldName(Object world) {
+        try {
+            return CommonUtils.getWorldName((yc) world);
+        } catch (Throwable t) {
+            return "world";
+        }
     }
 
     // ------------------------------------------------------------ limit
 
     private static final String FILE = "config/ChunkLoaderConversion.cfg";
     private static final String KEY = "chunkloader.maxchunksperplayer";
-    private static int override = Integer.MIN_VALUE; // unread
+    private static int override = Integer.MIN_VALUE;
 
     private static int limit(String owner) {
         int ov = configOverride();
@@ -125,10 +213,10 @@ public class TLiteChunkQuota {
         if (override != Integer.MIN_VALUE) return override;
         int val = -1;
         try {
-            File f = new File(FILE);
+            java.io.File f = new java.io.File(FILE);
             if (f.isFile()) {
-                Properties p = new Properties();
-                FileInputStream in = new FileInputStream(f);
+                java.util.Properties p = new java.util.Properties();
+                java.io.FileInputStream in = new java.io.FileInputStream(f);
                 try { p.load(in); } finally { in.close(); }
                 String s = p.getProperty(KEY);
                 if (s != null) val = Integer.parseInt(s.trim());

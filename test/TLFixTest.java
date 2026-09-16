@@ -1075,7 +1075,12 @@ public class TLFixTest extends JavaPlugin {
         immibis.chunkloader.TileChunkLoader anchor = new immibis.chunkloader.TileChunkLoader();
         anchor.owner = "QuotaTester";
         boolean anchorAllowed = TLiteChunkQuota.daClaim(anchor);
-        sender.sendMessage(TAG + "quota: ChickenChunks claims allowed " + allowed + " of 5, same-owner anchor allowed " + anchorAllowed + "  (expect 3 and false)");
+        int active = TLiteChunkQuota.activeCount("QuotaTester");
+        int disabled = TLiteChunkQuota.disabledCount("QuotaTester");
+        int listed = TLiteChunkQuota.describe("QuotaTester").size();
+        sender.sendMessage(TAG + "quota: ChickenChunks allowed " + allowed + " of 5, same-owner anchor allowed " + anchorAllowed
+                + "; registry active " + active + ", disabled " + disabled + ", listed " + listed
+                + "  (expect 3, false, active 3, disabled 3, listed 6)");
     }
 
     /** Industrial Tesla Coil flags: config toggles read, and the drop-deny handler cancels only

@@ -32,6 +32,7 @@ import java.util.zip.*;
 public class PatchChickenChunks {
 
     static final String TILE = "codechicken/chunkloader/TileChunkLoader";
+    static final String BASE = "codechicken/chunkloader/TileChunkLoaderBase";
     static final String MANAGER = "codechicken/chunkloader/ChunkLoaderManager";
     static final String LOADER = "codechicken/chunkloader/IChickenChunkLoader";
     static final String QUOTA = "TLiteChunkQuota";
@@ -39,7 +40,7 @@ public class PatchChickenChunks {
     static boolean doSpot;
     static int spotHits;
     static boolean doQuota;
-    static int claimHits, releaseHits;
+    static int claimHits, releaseHits, announceHits;
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
@@ -63,6 +64,7 @@ public class PatchChickenChunks {
             String n = ze.getName();
             if (doSpot && n.equals(TILE + ".class")) d = patchSpot(d);
             if (doQuota && n.equals(MANAGER + ".class")) d = patchQuota(d);
+            if (doQuota && n.equals(BASE + ".class")) d = patchAnnounce(d);
             out.put(n, d);
         }
         zf.close();
@@ -73,8 +75,9 @@ public class PatchChickenChunks {
 
         if (doSpot && spotHits != 1)
             throw new IllegalStateException("spotloader: expected 1 radius read in getChunks, patched " + spotHits);
-        if (doQuota && (claimHits != 1 || releaseHits != 1))
-            throw new IllegalStateException("combinedquota: expected 1 add and 1 rem, patched " + claimHits + " and " + releaseHits);
+        if (doQuota && (claimHits != 1 || releaseHits != 1 || announceHits != 1))
+            throw new IllegalStateException("combinedquota: expected 1 add, 1 rem, 1 announce, patched "
+                    + claimHits + ", " + releaseHits + ", " + announceHits);
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -139,6 +142,31 @@ public class PatchChickenChunks {
                 m.instructions.insert(pre);
                 releaseHits++;
             }
+        }
+        return write(cn);
+    }
+
+    /**
+     * TileChunkLoaderBase.onBlockPlacedBy(md) sets the owner then activates. After it, call
+     * TLiteChunkQuota.ccAnnounce(this) so the placer is told their count or that the loader was
+     * disabled at the limit. onBlockPlacedBy is server-only, so this only messages real placements.
+     */
+    static byte[] patchAnnounce(byte[] in) {
+        ClassNode cn = read(in);
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("onBlockPlacedBy") || !m.desc.equals("(Lmd;)V")) continue;
+            AbstractInsnNode last = null;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() == Opcodes.RETURN) last = i;
+            }
+            if (last == null) continue;
+            InsnList c = new InsnList();
+            c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, QUOTA, "ccAnnounce", "(L" + LOADER + ";)V", false));
+            m.instructions.insertBefore(last, c);
+            m.maxStack = Math.max(m.maxStack, 1);
+            announceHits++;
         }
         return write(cn);
     }

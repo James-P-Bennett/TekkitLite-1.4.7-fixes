@@ -132,11 +132,11 @@ patch_one "AdditionalPipes" "$AP_SRC" "AdditionalPipes2.1.3u42-BC3.4.2-MC1.4.7-p
 # immibis.cfg chunkloader.quotaType=perplayer + maxChunksPerPlayer).
 patch_one "ChickenChunks" "$CHUNKS_SRC" "ChickenChunks 1.3.1.0-patched.jar" \
           PatchChickenChunks.java "spotloader,combinedquota" \
-          build/cls/TLiteChunkQuota.class
+          build/cls/TLiteChunkQuota.class 'build/cls/TLiteChunkQuota$Loader.class'
 
 patch_one "Dimensional Anchor" "$DA_SRC" "dimensional-anchor-52.2.0-patched.jar" \
           PatchDA.java "spotloader,combinedquota" \
-          build/cls/TLiteChunkQuota.class
+          build/cls/TLiteChunkQuota.class 'build/cls/TLiteChunkQuota$Loader.class'
 
 patch_one "IC2NuclearControl" "$NC_SRC" "IC2NuclearControl-1.4.6-patched.zip" \
           PatchNC.java "packets,cardcap" \

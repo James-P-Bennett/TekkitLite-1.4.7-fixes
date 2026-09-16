@@ -460,11 +460,54 @@ public class TekkitCustomizer extends JavaPlugin
 			return true;
 		}
 
+		if(cmd.getName().equalsIgnoreCase("loaders"))
+		{
+			String target;
+			if(args.length >= 1)
+			{
+				if(player != null && !player.isOp() && !player.hasPermission("tekkitcustomizer.loaders.others"))
+				{
+					sender.sendMessage("§cYou don't have permission to view other players' chunk loaders.");
+					return true;
+				}
+				target = args[0];
+			}
+			else if(player != null)
+			{
+				target = player.getName();
+			}
+			else
+			{
+				sender.sendMessage("From the console, use /loaders <player>.");
+				return true;
+			}
+
+			java.util.List<String> lines = LoaderRegistry.describe(target);
+			if(lines == null)
+			{
+				sender.sendMessage("§cChunk loader tracking is unavailable (the loader mods are not loaded).");
+				return true;
+			}
+			int active = LoaderRegistry.activeCount(target);
+			int limit = LoaderRegistry.limit(target);
+			if(lines.isEmpty())
+			{
+				sender.sendMessage("§e" + target + " has no loaded chunk loaders.");
+				return true;
+			}
+			sender.sendMessage("§e" + target + "'s chunk loaders (" + active + "/" + limit + " active):");
+			for(String line : lines)
+			{
+				sender.sendMessage("§7  " + line);
+			}
+			return true;
+		}
+
 		return false;
 	}
-	
-	
-	
+
+
+
 	public void onDisable()
 	{
 		AddLogEntry("TekkitCustomizer disabled.");

@@ -50,6 +50,24 @@ public class PlayerEventHandler implements Listener {
 				inventory.setItem(i, new ItemStack(Material.AIR));
 			}
 		}
+
+		// A few seconds after joining (once their area has loaded), tell them if some of their
+		// chunk loaders are disabled because they are over the shared per-player limit.
+		final String name = player.getName();
+		org.bukkit.Bukkit.getScheduler().scheduleSyncDelayedTask(TekkitCustomizer.instance, new Runnable()
+		{
+			public void run()
+			{
+				Player online = org.bukkit.Bukkit.getPlayerExact(name);
+				if(online == null) return;
+				int off = LoaderRegistry.disabledCount(name);
+				if(off > 0)
+				{
+					int limit = LoaderRegistry.limit(name);
+					online.sendMessage("§c" + off + " of your chunk loaders are disabled (limit " + limit + "). Break some to re-enable the others.");
+				}
+			}
+		}, 100L);
 	}
 	
 	//when something is crafted (may not be a player crafting)

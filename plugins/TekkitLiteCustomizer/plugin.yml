@@ -11,6 +11,9 @@ commands:
       description: Reloads the banned item list from the config file.
       usage: /ReloadBannedItems
       permission: tekkitcustomizer.reload
+   loaders:
+      description: Lists your chunk loaders and their on/off status.
+      usage: /loaders [player]
 permissions:
     tekkitcustomizer.admin.*:
         description: Grants all administrative privileges.
@@ -25,4 +28,7 @@ permissions:
         default: op
     tekkitcustomizer.reload:
         description: Grants permission to use /ReloadBannedItems.
+        default: op
+    tekkitcustomizer.loaders.others:
+        description: Grants permission to view another player's chunk loaders with /loaders <player>.
         default: op

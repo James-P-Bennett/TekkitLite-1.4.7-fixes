@@ -30,13 +30,14 @@ public class PatchDA {
 
     static final String TILE = "immibis/chunkloader/TileChunkLoader";
     static final String WORLDINFO = "immibis/chunkloader/WorldInfo";
+    static final String BLOCK = "immibis/chunkloader/BlockChunkLoader";
     static final String TILEDESC = "(L" + TILE + ";)V";
     static final String QUOTA = "TLiteChunkQuota";
 
     static boolean doSpot;
     static int spotHits;
     static boolean doQuota;
-    static int claimHits, releaseHits;
+    static int claimHits, releaseHits, announceHits;
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
@@ -60,6 +61,7 @@ public class PatchDA {
             String n = ze.getName();
             if (doSpot && n.equals(TILE + ".class")) d = patchSpot(d);
             if (doQuota && n.equals(WORLDINFO + ".class")) d = patchQuota(d);
+            if (doQuota && n.equals(BLOCK + ".class")) d = patchAnnounce(d);
             out.put(n, d);
         }
         zf.close();
@@ -70,8 +72,9 @@ public class PatchDA {
 
         if (doSpot && spotHits != 1)
             throw new IllegalStateException("spotloader: expected to patch 1 limitRadius, patched " + spotHits);
-        if (doQuota && (claimHits != 1 || releaseHits != 2))
-            throw new IllegalStateException("combinedquota: expected 1 addLoader and 2 releases, patched " + claimHits + " and " + releaseHits);
+        if (doQuota && (claimHits != 1 || releaseHits != 2 || announceHits != 1))
+            throw new IllegalStateException("combinedquota: expected 1 addLoader, 2 releases, 1 announce, patched "
+                    + claimHits + ", " + releaseHits + ", " + announceHits);
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -135,6 +138,36 @@ public class PatchDA {
                 m.instructions.insert(pre);
                 releaseHits++;
             }
+        }
+        return write(cn);
+    }
+
+    /**
+     * BlockChunkLoader.a(yc,int,int,int,md) (onBlockPlacedBy) sets the anchor's owner. Before it
+     * returns, re-fetch the tile with world.getBlockTileEntity(x,y,z) and call
+     * TLiteChunkQuota.daAnnounce so the placer is told their count or that it was disabled at the
+     * limit. The method is server-only in the mod, so this only messages real placements.
+     */
+    static byte[] patchAnnounce(byte[] in) {
+        ClassNode cn = read(in);
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("a") || !m.desc.equals("(Lyc;IIILmd;)V")) continue;
+            AbstractInsnNode last = null;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() == Opcodes.RETURN) last = i;
+            }
+            if (last == null) continue;
+            InsnList c = new InsnList();
+            c.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            c.add(new VarInsnNode(Opcodes.ILOAD, 2));
+            c.add(new VarInsnNode(Opcodes.ILOAD, 3));
+            c.add(new VarInsnNode(Opcodes.ILOAD, 4));
+            c.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "yc", "q", "(III)Lany;", false));
+            c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, QUOTA, "daAnnounce", "(Ljava/lang/Object;)V", false));
+            m.instructions.insertBefore(last, c);
+            m.maxStack = Math.max(m.maxStack, 4);
+            announceHits++;
         }
         return write(cn);
     }
