@@ -155,6 +155,68 @@ public class TLiteIC2 {
         }
     }
 
+    /**
+     * Injected at the top of PointExplosion.doExplosionB, which IC2 Dynamite and Sticky Dynamite
+     * use to blow up blocks. Like the old ExplosionIC2 it removes blocks straight through the world
+     * (setBlock to air) and never fires the Bukkit EntityExplodeEvent, so GriefPrevention and
+     * WorldGuard never saw a stick of dynamite. This fires that event with the blocks it is about
+     * to take, lets the plugins trim it exactly as for vanilla TNT, then removes the trimmed
+     * positions from destroyedBlockPositions so only the survivors are destroyed. destroyedBlockPositions
+     * is a Set here (it is a Map in ExplosionIC2). No broadcast: dynamite is not a nuke.
+     */
+    public static void ic2PointFilter(yc world, int x, int y, int z, lq exploder, java.util.Set positions) {
+        try {
+            if (world == null || world.I || positions == null || positions.isEmpty()) {
+                return;
+            }
+            org.bukkit.World bworld = world.getWorld();
+            if (bworld == null) {
+                return;
+            }
+            org.bukkit.entity.Entity who = null;
+            try {
+                if (exploder != null) {
+                    who = exploder.getBukkitEntity();
+                }
+            } catch (Throwable t) {
+                who = null;
+            }
+            if (who == null) {
+                who = (org.bukkit.entity.Entity) CraftFakePlayer.get(world, "[IC2]", false).getBukkitEntity();
+            }
+
+            java.util.List blocks = new java.util.ArrayList();
+            for (java.util.Iterator it = positions.iterator(); it.hasNext(); ) {
+                yv p = (yv) it.next();
+                blocks.add(bworld.getBlockAt(p.a, p.b, p.c));
+            }
+
+            org.bukkit.event.entity.EntityExplodeEvent ev = new org.bukkit.event.entity.EntityExplodeEvent(
+                    who, new org.bukkit.Location(bworld, x, y, z), blocks, 1.0F);
+            org.bukkit.Bukkit.getPluginManager().callEvent(ev);
+
+            if (ev.isCancelled()) {
+                positions.clear();
+                return;
+            }
+
+            java.util.HashSet survivors = new java.util.HashSet();
+            java.util.List kept = ev.blockList();
+            for (int i = 0; i < kept.size(); i++) {
+                org.bukkit.block.Block b = (org.bukkit.block.Block) kept.get(i);
+                survivors.add(b.getX() + ":" + b.getY() + ":" + b.getZ());
+            }
+            for (java.util.Iterator it = positions.iterator(); it.hasNext(); ) {
+                yv p = (yv) it.next();
+                if (!survivors.contains(p.a + ":" + p.b + ":" + p.c)) {
+                    it.remove();
+                }
+            }
+        } catch (Throwable t) {
+            // Leave the explosion as stock on any failure.
+        }
+    }
+
     /** TLiteProtect as the laser's owner. A laser with no player owner is refused. */
     private static boolean allowed(md owner, yc world, int x, int y, int z, String what) {
         if (!(owner instanceof qx) || world == null) {

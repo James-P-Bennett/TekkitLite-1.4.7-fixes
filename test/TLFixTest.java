@@ -104,7 +104,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn|iddump|dynamite|scmod>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -144,6 +144,9 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("tesla")) tesla(sender);
             else if (s.equals("explode")) explode(sender);
             else if (s.equals("nukewarn")) nukewarn(sender);
+            else if (s.equals("iddump")) iddump(sender);
+            else if (s.equals("dynamite")) dynamite(sender);
+            else if (s.equals("scmod")) scmod(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -1223,6 +1226,78 @@ public class TLFixTest extends JavaPlugin {
 
         sender.sendMessage(TAG + "nukewarn: explosionsAllowedAt off=" + off + ", on=" + on + ", wilderness=" + wild
                 + "  (expect false, true, false)");
+    }
+
+    /**
+     * Sets off an IC2 dynamite PointExplosion one block outside a claim border and checks that
+     * claimed blocks are untouched while open-ground blocks are destroyed (below sea level, carved
+     * air pocket, same as the nuke explode test). Stock removes claimed blocks; the patched coremod
+     * fires EntityExplodeEvent so GriefPrevention strips only the claimed ones.
+     */
+    private void dynamite(CommandSender sender) {
+        yc w = world();
+        org.bukkit.World bw = getServer().getWorlds().get(0);
+        Location spawn = bw.getSpawnLocation();
+        int cx = spawn.getBlockX(), cz = spawn.getBlockZ();
+        int y0 = 30;
+        for (int dx = -1; dx <= 2; dx++) bw.loadChunk((cx + dx * 16) >> 4, cz >> 4);
+        Location at = new Location(bw, cx, y0, cz);
+        if (GriefPrevention.instance.dataStore.getClaimAt(at, true, null) == null) {
+            GriefPrevention.instance.dataStore.createClaim(bw, cx - 8, cx + 8, 0, 255, cz - 8, cz + 8, "Owner", null, null);
+        }
+        int border = cx + 8;
+        for (int x = cx + 2; x <= cx + 17; x++) for (int dy = -2; dy <= 3; dy++) for (int dz = -2; dz <= 2; dz++)
+            w.e(x, y0 + dy, cz + dz, 0);
+        for (int x = cx + 3; x <= cx + 15; x++) w.e(x, y0, cz, 1);
+
+        int cBefore = 0, oBefore = 0;
+        for (int x = cx + 3; x <= border; x++) if (w.a(x, y0, cz) == 1) cBefore++;
+        for (int x = border + 1; x <= cx + 15; x++) if (w.a(x, y0, cz) == 1) oBefore++;
+
+        ic2.core.PointExplosion pe = new ic2.core.PointExplosion(w, null, border + 1, y0, cz, 2.0F, 0.3F, 1.0F);
+        pe.doExplosionA(6, 3, 3, 6, 3, 3);
+        pe.doExplosionB(true);
+
+        int cAfter = 0, oAfter = 0;
+        for (int x = cx + 3; x <= border; x++) if (w.a(x, y0, cz) == 1) cAfter++;
+        for (int x = border + 1; x <= cx + 15; x++) if (w.a(x, y0, cz) == 1) oAfter++;
+        clear(w, cx + 9, y0, cz, 12);
+
+        sender.sendMessage(TAG + "dynamite: claimed " + (cBefore - cAfter) + "/" + cBefore + " destroyed, open "
+                + (oBefore - oAfter) + "/" + oBefore + " destroyed  (fixed: claimed 0, open some; stock: both)");
+    }
+
+    /** Resolves Steve's Carts module id 31 (banned as 31997:31) to its name and worker class. */
+    private void scmod(CommandSender sender) throws Exception {
+        java.util.HashMap list = vswe.stevescarts.ModuleData.ModuleData.getList();
+        java.lang.reflect.Field mc = vswe.stevescarts.ModuleData.ModuleData.class.getDeclaredField("moduleClass");
+        mc.setAccessible(true);
+        String found = "none";
+        for (Object o : list.values()) {
+            vswe.stevescarts.ModuleData.ModuleData md = (vswe.stevescarts.ModuleData.ModuleData) o;
+            if ((md.getID() & 0xFF) == 31) {
+                Object cls = mc.get(md);
+                found = "name=" + md.getName() + " worker=" + (cls == null ? "null" : ((Class) cls).getName());
+            }
+        }
+        sender.sendMessage(TAG + "scmod: id31 " + found);
+    }
+
+    /** Prints the owning item class for each banned "dynamite" id, to see which mod each belongs to. */
+    private void iddump(CommandSender sender) {
+        int[][] ids = { { 30214, 0 }, { 30215, 0 }, { 31997, 31 }, { 31998, 6 } };
+        StringBuilder sb = new StringBuilder();
+        for (int[] im : ids) {
+            String cls;
+            try {
+                up item = new ur(im[0], 1, im[1]).b();
+                cls = (item == null) ? "null" : item.getClass().getName();
+            } catch (Throwable t) {
+                cls = "ERR:" + t;
+            }
+            sb.append(im[0]).append(":").append(im[1]).append("=").append(cls).append("  ");
+        }
+        sender.sendMessage(TAG + "iddump: " + sb);
     }
 
     /** APM Battery Station dupe guard: only stackable (same) items merge into the output slot. */

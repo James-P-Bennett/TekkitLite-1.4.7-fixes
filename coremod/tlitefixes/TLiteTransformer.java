@@ -49,6 +49,7 @@ public class TLiteTransformer implements IClassTransformer {
 
     static final String LASER = "ic2/core/item/tool/EntityMiningLaser";
     static final String EXPLOSION = "ic2/core/ExplosionIC2";
+    static final String POINTEXP = "ic2/core/PointExplosion";
     static final String BAG = "com/eloraam/redpower/base/ContainerBag";
     static final String CLICK = "(IIILqx;)Lur;";
     static final String COREPROXY = "com/eloraam/redpower/core/CoreProxy";
@@ -66,7 +67,7 @@ public class TLiteTransformer implements IClassTransformer {
             return bytes;
         }
         String internal = name.replace('.', '/');
-        if (!internal.equals(LASER) && !internal.equals(EXPLOSION) && !internal.equals(BAG)
+        if (!internal.equals(LASER) && !internal.equals(EXPLOSION) && !internal.equals(POINTEXP) && !internal.equals(BAG)
                 && !internal.equals(COREPROXY) && !internal.equals(BREAKER) && !internal.equals(IGNITER)
                 && !internal.equals(TILEMACHINE) && !internal.equals(DEPLOYER) && !internal.equals(NETMGR)
                 && !internal.equals(SORTER) && !internal.equals(TESLA)) {
@@ -92,6 +93,7 @@ public class TLiteTransformer implements IClassTransformer {
         boolean ok;
         if (internal.equals(LASER)) ok = patchLaser(cn);
         else if (internal.equals(EXPLOSION)) ok = patchExplosion(cn);
+        else if (internal.equals(POINTEXP)) ok = patchPoint(cn);
         else if (internal.equals(COREPROXY)) ok = patchCoreProxy(cn);
         else if (internal.equals(BREAKER)) ok = patchBreaker(cn);
         else if (internal.equals(IGNITER)) ok = patchIgniter(cn);
@@ -255,6 +257,39 @@ public class TLiteTransformer implements IClassTransformer {
         while (n != null && (n.getType() == AbstractInsnNode.LABEL || n.getType() == AbstractInsnNode.LINE
                 || n.getType() == AbstractInsnNode.FRAME)) n = n.getNext();
         return n;
+    }
+
+    /**
+     * doExplosionB(boolean) is where IC2 Dynamite removes its blocks (setBlock to air), with no
+     * Bukkit event. A call to TLiteIC2.ic2PointFilter is prepended so a real EntityExplodeEvent
+     * fires and GriefPrevention/WorldGuard trim the block set before the method copies and removes
+     * it, exactly as for the ExplosionIC2 filter.
+     */
+    static boolean patchPoint(ClassNode cn) {
+        int hits = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("doExplosionB") || !m.desc.equals("(Z)V")) continue;
+            InsnList c = new InsnList();
+            c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            c.add(new FieldInsnNode(Opcodes.GETFIELD, POINTEXP, "worldObj", "Lyc;"));
+            c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            c.add(new FieldInsnNode(Opcodes.GETFIELD, POINTEXP, "explosionX", "I"));
+            c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            c.add(new FieldInsnNode(Opcodes.GETFIELD, POINTEXP, "explosionY", "I"));
+            c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            c.add(new FieldInsnNode(Opcodes.GETFIELD, POINTEXP, "explosionZ", "I"));
+            c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            c.add(new FieldInsnNode(Opcodes.GETFIELD, POINTEXP, "exploder", "Llq;"));
+            c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            c.add(new FieldInsnNode(Opcodes.GETFIELD, POINTEXP, "destroyedBlockPositions", "Ljava/util/Set;"));
+            c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", "ic2PointFilter",
+                    "(Lyc;IIILlq;Ljava/util/Set;)V"));
+            m.instructions.insert(c);
+            m.maxStack = Math.max(m.maxStack, 6);
+            hits++;
+        }
+        return hits == 1;
     }
 
     /** Adds the slotClick override; refuses when ContainerBag already has one. */
@@ -495,7 +530,7 @@ public class TLiteTransformer implements IClassTransformer {
             System.err.println("usage: TLiteTransformer <ic2.jar> <RedPowerCore.zip> <RedPowerMechanical.zip>");
             System.exit(2);
         }
-        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER }, { args[0], NETMGR }, { args[2], SORTER }, { args[0], TESLA } };
+        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[0], POINTEXP }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER }, { args[0], NETMGR }, { args[2], SORTER }, { args[0], TESLA } };
         boolean failed = false;
         for (String[] check : checks) {
             ZipFile zf = new ZipFile(check[0]);

@@ -532,7 +532,7 @@ Patched left the block and all 27, and still mined the block and destroyed 9 on 
 </details>
 
 <details>
-<summary><b><code>explosion</code>: Nuke and Industrial TNT ignore claims and crash the server (protection, crash)</b></summary>
+<summary><b><code>explosion</code>: Nuke, Industrial TNT and dynamite ignore claims, and the nuke crashes the server (protection, crash)</b></summary>
 
 **The bug.** Every IC2 explosion (Nuke, Industrial TNT, reactor meltdown) runs through
 `ExplosionIC2.doExplosion`, which removes blocks straight through the world with `world.setBlock`
@@ -540,6 +540,10 @@ and never fires the Bukkit `EntityExplodeEvent`. GriefPrevention, WorldGuard and
 TekkitCustomizer `ProtectSurfaceFromExplosives` option all filter that event, so none of them saw
 an IC2 explosion: a nuke or ITNT blew up claims and surface builds the same rules protect from
 vanilla TNT. Both were banned for it.
+
+IC2 Dynamite and Sticky Dynamite have the same hole through a second class,
+`PointExplosion.doExplosionB`, which also removes blocks with `world.setBlock` and fires no event,
+so a stick of dynamite blew up claimed blocks too.
 
 There is also a stock crash: `ExplosionIC2.shootRay` runs a binary search over the entities it
 collected, but it only collects `EntityLiving` and `EntityItem`, while it decides to run the
@@ -558,6 +562,8 @@ search does `get(0)` on an empty list and throws, crashing the server with a tic
   Mining Laser's Explosive mode is excluded, since `laser` already checks it per block.
 - `shootRay`'s entity-kill block is skipped whenever the collected entity list is empty, so the
   binary search never runs on nothing.
+- `PointExplosion.doExplosionB` gets the same treatment through `TLiteIC2.ic2PointFilter` (its
+  block set is a `Set`, not a `Map`), so IC2 dynamite now honors claims too.
 - On a nuke bomb detonation (only, not ITNT or reactor meltdowns) a server-wide alert is
   broadcast: `☢ <player> set off a Nuke at x,y,z!`.
 
@@ -568,6 +574,13 @@ nuke explosion damage, since the blast is not attributed to the igniting player)
 policy/balance ban. The fixes still apply to it whenever one is set off (admin or creative), and to
 reactor meltdowns, which run the same `ExplosionIC2`. This server's `explosionPowerNuke` is `4.0`
 and the separate reactor cap `explosionPowerReactorMax` is `2.0`.
+
+**IC2 Dynamite and Sticky Dynamite are unbanned** now that `PointExplosion` honors claims. The two
+Steve's Carts items that were banned as dynamite are unbanned as well: the Dynamite Carrier module
+(`31997:31`) detonates through vanilla `World.createExplosion`, which already fires the Bukkit
+event GriefPrevention filters, and `31998:6` is only a crafting component. (The four were mislabeled
+as one mod's dynamite in the ban list; they are actually IC2 items `30214`/`30215` and Steve's
+Carts items, not Balkon's, whose own `dynamite` fix is separate.)
 
 GriefPrevention's per-claim explosives toggle is honored: it strips claimed blocks unless the
 owner has enabled explosives for that claim (`/claimexplosions`, `Claim.areExplosivesAllowed`),
@@ -585,7 +598,9 @@ blocks, and the coremod logged the broadcast `☢ Intruder set off a Nuke at 233
 check also confirms `ExplosionIC2` is patched at all three sites (per-block laser check, the
 explode-event filter, and the crash guard). The placement warning's claim check was verified too
 (`tlfix nukewarn`): the plugin's `ClaimQuery` read `false` with explosives off, `true` with them
-on, and `false` in the wilderness, on a server with GriefPrevention and no Vault.
+on, and `false` in the wilderness, on a server with GriefPrevention and no Vault. IC2 dynamite was
+checked the same way (`tlfix dynamite`): a `PointExplosion` one block outside a claim border
+destroyed **0 of 6** claimed blocks patched versus **6 of 6** on stock, both clearing open ground.
 
 </details>
 
@@ -1113,7 +1128,7 @@ dimension id crashed the link server-side.
 | Turtles placing vanilla blocks | MCPC+ asks plugins as the player "ComputerCraft" when a turtle places a vanilla block, so an owner's turtle may be refused in their own claim. Not checked. |
 | IC2 Terraformer changing terrain in claims | A placed Terraformer edits blocks in a radius with no owner; like MFFS it would need owner-tracking that its code does not make available cleanly. Recommend a ban or server-policy decision. |
 | Tampered on-disk NBT crashing one chunk/tile load (Factorization slots, ACT Mk II recipe, immibis chunk loader shape, Mystcraft legacy biome) | Only reachable if the region file is already edited or corrupt, not by a player in game. Left as defensive hardening, not applied. |
-| Balance and lag bans: Nuke, alarms, chunk loaders | Server policy rather than bugs. The Nuke is now crash-fixed and claim-safe (see `explosion`) but kept banned by choice; the rest are left to config and plugins. |
+| Balance and lag bans: Nuke, chunk-loader caps | Server policy rather than bugs. The Nuke is now crash-fixed and claim-safe (see `explosion`) but kept banned by choice; chunk-loader caps are enforced by the loader feature. The Industrial and Howler alarms were unbanned (their only real vector, remote packet spam, is fixed by `packets`; placement is annoyance-only and claim-protected). |
 
 ---
 
