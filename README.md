@@ -1037,7 +1037,6 @@ dimension id crashed the link server-side.
 | What | Status |
 |---|---|
 | Other IC2 tools: Wrench, Foam Sprayer, Electric Hoe, Treetap, Painter, Cable Cutter, Terraformer | Change blocks with no protection check. GriefPrevention may already stop the right clicks on IC2 blocks. Not checked. |
-| Mining Laser damage | Beams still hurt and set fire to players and mobs anywhere. A PvP matter, not a claim bypass. |
 | Turtles placing vanilla blocks | MCPC+ asks plugins as the player "ComputerCraft" when a turtle places a vanilla block, so an owner's turtle may be refused in their own claim. Not checked. |
 | Pipes, tubes and AE buses reading a chest just inside a claim from outside | A border problem for anything that moves items. No fix. |
 | IC2 Terraformer changing terrain in claims | A placed Terraformer edits blocks in a radius with no owner; like MFFS it would need owner-tracking that its code does not make available cleanly. Recommend a ban or server-policy decision. |
