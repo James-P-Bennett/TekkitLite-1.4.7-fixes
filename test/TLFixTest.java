@@ -90,6 +90,7 @@ import dan200.computer.shared.TileEntityComputer;
  *   tlfix lpsec      LogisticsPipes security station edit allowed only for a viewer of that station
  *   tlfix ncflood    NuclearControl sensor card field cap bounds NBT growth
  *   tlfix apmdupe    APM Battery Station output merge only for stackable items
+ *   tlfix tesla      Industrial Tesla Coil flags: config reads and drop-deny handler match
  *
  * The claim is owned by "Owner" and every action is done by the fake player "Intruder", who
  * has no trust in it. Default package so the obfuscated vanilla classes can be named.
@@ -102,7 +103,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -139,6 +140,7 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("lpsec")) lpsec(sender);
             else if (s.equals("ncflood")) ncflood(sender);
             else if (s.equals("apmdupe")) apmdupe(sender);
+            else if (s.equals("tesla")) tesla(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -1074,6 +1076,43 @@ public class TLFixTest extends JavaPlugin {
         anchor.owner = "QuotaTester";
         boolean anchorAllowed = TLiteChunkQuota.daClaim(anchor);
         sender.sendMessage(TAG + "quota: ChickenChunks claims allowed " + allowed + " of 5, same-owner anchor allowed " + anchorAllowed + "  (expect 3 and false)");
+    }
+
+    /** Industrial Tesla Coil flags: config toggles read, and the drop-deny handler cancels only
+     *  drops from the coil\'s own damage source. */
+    private void tesla(CommandSender sender) throws Exception {
+        java.io.File cfg = new java.io.File("config/TeslaCoil.cfg");
+        java.io.FileWriter w = new java.io.FileWriter(cfg);
+        w.write("industrialTeslaCoil.denyMobDrops=true\nindustrialTeslaCoil.noPlayerDamage=true\n");
+        w.close();
+        boolean np = TLiteARS.noPlayerDamage();
+        boolean dd = TLiteARS.denyMobDrops();
+
+        String handler = "n/a";
+        try {
+            lh[] two = new lh[2];
+            int f = 0;
+            for (java.lang.reflect.Field fld : lh.class.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(fld.getModifiers()) && fld.getType() == lh.class) {
+                    fld.setAccessible(true);
+                    Object v = fld.get(null);
+                    if (v != null && f < 2) two[f++] = (lh) v;
+                }
+            }
+            TLiteARSDrops h = new TLiteARSDrops();
+            TLiteARSDrops.teslaSource = two[0];
+            net.minecraftforge.event.entity.living.LivingDropsEvent e1 =
+                new net.minecraftforge.event.entity.living.LivingDropsEvent(null, two[0], new java.util.ArrayList(), 0, false, 0);
+            h.onLivingDrops(e1);
+            net.minecraftforge.event.entity.living.LivingDropsEvent e2 =
+                new net.minecraftforge.event.entity.living.LivingDropsEvent(null, two[1], new java.util.ArrayList(), 0, false, 0);
+            h.onLivingDrops(e2);
+            handler = "coil-source cancelled=" + e1.isCanceled() + ", other-source cancelled=" + e2.isCanceled();
+        } catch (Throwable t) {
+            handler = "threw " + t;
+        }
+        sender.sendMessage(TAG + "tesla: noPlayerDamage=" + np + ", denyMobDrops=" + dd + "; " + handler
+                + "  (expect true, true; coil cancelled=true, other=false)");
     }
 
     /** APM Battery Station dupe guard: only stackable (same) items merge into the output slot. */

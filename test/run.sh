@@ -36,6 +36,7 @@ JARS=(
   "WR-CBE Core 1.3.2.8.jar|WR-CBE Core 1.3.2.8-patched.jar"
   "StevesCarts2.0.0.a62.zip|StevesCarts2.0.0.a62-patched.zip"
   "AdvancedPowerManagement-1.1.55-IC2_1.112.jar|AdvancedPowerManagement-1.1.55-IC2_1.112-patched.jar"
+  "adv-repulsion-systems-52.0.6.jar|adv-repulsion-systems-52.0.6-patched.jar"
   "ModularPowersuits-0.3.2-199.jar|ModularPowersuits-0.3.2-199-patched.jar"
   "mystcraft-uni-1.4.7-0.10.1.00.zip|mystcraft-uni-1.4.7-0.10.1.00-patched.zip"
   "ComputerCraft1.5.zip|ComputerCraft1.5-patched.zip"
