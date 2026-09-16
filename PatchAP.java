@@ -7,50 +7,50 @@ import java.util.zip.*;
 /**
  * Tekkit Lite 1.4.7 fixes: AdditionalPipes 2.1.3 patch.
  *
- *   teleowner   NetworkHandler.onPacketData
- *               drops the "set teleport-pipe owner from the client" write (packet id 16)
+ *   teleowner  NetworkHandler.onPacketData
+ *              drops the "set teleport-pipe owner from the client" write (packet id 16)
  *
- *   apchunkgate chunkloader.TileChunkLoader.s (tile tick)
- *               gates the loader on TLiteAP.apChunkLoadEnabled(): when off, the loader drops its
- *               ticket and returns, so it force loads nothing (part of ChunkLoaderConversion)
+ *   apparity   brings the AdditionalPipes chunk loader ("Teleport Tether", block 4077) to parity
+ *              with the ChickenChunks loader and the Dimensional Anchor (ChunkLoaderConversion):
+ *                TileChunkLoader gains a public tliteOwner field;
+ *                BlockChunkLoader gains onBlockPlacedBy, which records the placer as the owner and
+ *                  messages them via TLiteAP.apPlaced;
+ *                TileChunkLoader.a/b (read/writeToNBT) persist tliteOwner via TLiteAP.apLoadNBT/apSaveNBT;
+ *                TileChunkLoader.getLoadArea forces loadDistance to 0 (a single chunk);
+ *                TileChunkLoader.s (tick) force loads only when TLiteAP.apShouldLoad allows it
+ *                  (enabled, owned, owner online/grace, under the shared per-player cap), else stops.
  *
  * Packet id 16 set a teleport pipe's owner field to any client string on any teleport pipe, with
- * no check. An attacker set their own receiving pipe's owner to a victim's name (and a matching
- * frequency) and the victim's sending pipe then teleported its items, energy and liquid to the
- * attacker, across claims and dimensions. The owner is only ever meant to be set server-side on
- * placement, so the client's write is discarded; the value on the stack is popped.
+ * no check, so an attacker could steal a victim's piped items, energy and liquid. The client write
+ * is dropped; the owner is only set server-side on placement. Teleport pipes themselves are not
+ * touched: a pipe leaves the network when its chunk unloads, so items aimed at an unloaded
+ * destination drop at the source instead of teleporting into it.
  *
- * The AdditionalPipes chunk loader (the "Teleport Tether", block 4077) force loads its chunks with
- * a Forge ticket, offline included, and the mod has no config switch for it. apchunkgate adds one:
- * the loader tick calls TLiteAP.apChunkLoadEnabled() and, when it returns false (the default), calls
- * stopChunkLoading() and returns before requesting a ticket. Teleport pipes are left alone: a pipe
- * removes itself from the network when its chunk unloads, so an item sent toward an unloaded
- * destination has no target and drops at the source pipe rather than teleporting into it.
- *
- * usage: PatchAP <in.jar> <out.jar> <patch>[,<patch>...] [<TLiteAP.class>]
+ * usage: PatchAP <in.jar> <out.jar> <patch>[,<patch>...] [<TLiteAP.class>...]
  */
 public class PatchAP {
 
     static final String HANDLER = "buildcraft/additionalpipes/network/NetworkHandler";
     static final String LOGIC = "buildcraft/additionalpipes/pipes/logic/PipeLogicTeleport";
-    static final String CHUNKTILE = "buildcraft/additionalpipes/chunkloader/TileChunkLoader";
+    static final String TILE = "buildcraft/additionalpipes/chunkloader/TileChunkLoader";
+    static final String BLOCK = "buildcraft/additionalpipes/chunkloader/BlockChunkLoader";
     static final String HELPER = "TLiteAP";
 
     static boolean doOwner;
     static int ownerHits;
-    static boolean doGate;
-    static int gateHits;
+    static boolean doParity;
+    static int fieldHits, areaHits, loadHits, saveHits, gateHits, placedHits;
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
-            System.err.println("usage: PatchAP <in.jar> <out.jar> <patches> [TLiteAP.class]");
-            System.err.println("patches: teleowner, apchunkgate");
+            System.err.println("usage: PatchAP <in.jar> <out.jar> <patches> [TLiteAP.class...]");
+            System.err.println("patches: teleowner, apparity");
             System.exit(2);
         }
         for (String p : args[2].split(",")) {
             p = p.trim();
             if (p.equals("teleowner")) doOwner = true;
-            else if (p.equals("apchunkgate")) doGate = true;
+            else if (p.equals("apparity")) doParity = true;
             else throw new IllegalArgumentException("unknown patch: " + p);
         }
 
@@ -62,7 +62,8 @@ public class PatchAP {
             byte[] d = readAll(zf.getInputStream(ze));
             String n = ze.getName();
             if (doOwner && n.equals(HANDLER + ".class")) d = patchOwner(d);
-            if (doGate && n.equals(CHUNKTILE + ".class")) d = patchGate(d);
+            if (doParity && n.equals(TILE + ".class")) d = patchTile(d);
+            if (doParity && n.equals(BLOCK + ".class")) d = patchBlock(d);
             out.put(n, d);
         }
         zf.close();
@@ -73,8 +74,9 @@ public class PatchAP {
 
         if (doOwner && ownerHits != 1)
             throw new IllegalStateException("teleowner: expected 1 owner write, patched " + ownerHits);
-        if (doGate && gateHits != 1)
-            throw new IllegalStateException("apchunkgate: expected to patch 1 tick, patched " + gateHits);
+        if (doParity && (fieldHits != 1 || areaHits != 1 || loadHits != 1 || saveHits != 1 || gateHits != 1 || placedHits != 1))
+            throw new IllegalStateException("apparity: expected 1 each (field/area/load/save/gate/placed), patched "
+                    + fieldHits + "/" + areaHits + "/" + loadHits + "/" + saveHits + "/" + gateHits + "/" + placedHits);
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -106,26 +108,95 @@ public class PatchAP {
         return write(cn);
     }
 
+    /** TileChunkLoader: owner field, single-chunk load area, NBT owner persistence, and the tick gate. */
+    static byte[] patchTile(byte[] in) {
+        ClassNode cn = read(in);
+        cn.fields.add(new FieldNode(Opcodes.ACC_PUBLIC, "tliteOwner", "Ljava/lang/String;", null, null));
+        fieldHits++;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+
+            if (m.name.equals("getLoadArea") && m.desc.equals("()Ljava/util/List;")) {
+                InsnList c = new InsnList();
+                c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                c.add(new InsnNode(Opcodes.ICONST_0));
+                c.add(new FieldInsnNode(Opcodes.PUTFIELD, TILE, "loadDistance", "I"));
+                m.instructions.insert(c);
+                m.maxStack = Math.max(m.maxStack, 2);
+                areaHits++;
+            }
+
+            if (m.name.equals("a") && m.desc.equals("(Lbq;)V")) {
+                appendBeforeReturn(m, nbtCall("apLoadNBT"));
+                m.maxStack = Math.max(m.maxStack, 2);
+                loadHits++;
+            }
+            if (m.name.equals("b") && m.desc.equals("(Lbq;)V")) {
+                appendBeforeReturn(m, nbtCall("apSaveNBT"));
+                m.maxStack = Math.max(m.maxStack, 2);
+                saveHits++;
+            }
+
+            if (m.name.equals("s") && m.desc.equals("()V")) {
+                InsnList pre = new InsnList();
+                LabelNode cont = new LabelNode();
+                pre.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                pre.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "apShouldLoad", "(Ljava/lang/Object;)Z", false));
+                pre.add(new JumpInsnNode(Opcodes.IFNE, cont));
+                pre.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                pre.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, TILE, "stopChunkLoading", "()V", false));
+                pre.add(new InsnNode(Opcodes.RETURN));
+                pre.add(cont);
+                m.instructions.insert(pre);
+                m.maxStack = Math.max(m.maxStack, 1);
+                gateHits++;
+            }
+        }
+        return write(cn);
+    }
+
+    private static InsnList nbtCall(String method) {
+        InsnList c = new InsnList();
+        c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        c.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, method, "(Ljava/lang/Object;Lbq;)V", false));
+        return c;
+    }
+
+    private static void appendBeforeReturn(MethodNode m, InsnList payload) {
+        AbstractInsnNode last = null;
+        for (AbstractInsnNode i : m.instructions.toArray()) {
+            if (i.getOpcode() == Opcodes.RETURN) last = i;
+        }
+        if (last != null) m.instructions.insertBefore(last, payload);
+    }
+
     /**
-     * Prepends to the loader tile's tick s(): if TLiteAP.apChunkLoadEnabled() is false, call
-     * this.stopChunkLoading() and return, before the tick can request a chunk ticket.
+     * Adds onBlockPlacedBy (obf a(yc,int,int,int,md)) to BlockChunkLoader, which the AP block does
+     * not have, delegating to TLiteAP.apPlaced to record the placer as the loader's owner. Minecraft
+     * calls this after placement; the vanilla base method is empty, so no super call is needed.
      */
-    static byte[] patchGate(byte[] in) {
+    static byte[] patchBlock(byte[] in) {
         ClassNode cn = read(in);
         for (Object mo : cn.methods) {
             MethodNode m = (MethodNode) mo;
-            if (!m.name.equals("s") || !m.desc.equals("()V")) continue;
-            InsnList pre = new InsnList();
-            LabelNode cont = new LabelNode();
-            pre.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "apChunkLoadEnabled", "()Z"));
-            pre.add(new JumpInsnNode(Opcodes.IFNE, cont)); // enabled: run the normal tick
-            pre.add(new VarInsnNode(Opcodes.ALOAD, 0));
-            pre.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, CHUNKTILE, "stopChunkLoading", "()V"));
-            pre.add(new InsnNode(Opcodes.RETURN));
-            pre.add(cont);
-            m.instructions.insert(pre);
-            gateHits++;
+            if (m.name.equals("a") && m.desc.equals("(Lyc;IIILmd;)V")) {
+                throw new IllegalStateException("apparity: BlockChunkLoader already has onBlockPlacedBy");
+            }
         }
+        MethodNode m = new MethodNode(Opcodes.ACC_PUBLIC, "a", "(Lyc;IIILmd;)V", null, null);
+        InsnList c = m.instructions;
+        c.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        c.add(new VarInsnNode(Opcodes.ILOAD, 2));
+        c.add(new VarInsnNode(Opcodes.ILOAD, 3));
+        c.add(new VarInsnNode(Opcodes.ILOAD, 4));
+        c.add(new VarInsnNode(Opcodes.ALOAD, 5));
+        c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "apPlaced", "(Lyc;IIILmd;)V", false));
+        c.add(new InsnNode(Opcodes.RETURN));
+        m.maxStack = 5;
+        m.maxLocals = 6;
+        cn.methods.add(m);
+        placedHits++;
         return write(cn);
     }
 

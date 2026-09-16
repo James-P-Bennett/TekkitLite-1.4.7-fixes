@@ -1,24 +1,23 @@
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileWriter;
+import java.lang.reflect.Field;
 import java.util.Properties;
 
 /**
- * ChunkLoaderConversion: the AdditionalPipes chunk-loader toggle (PatchAP, patch apchunkgate).
+ * ChunkLoaderConversion: brings the AdditionalPipes chunk loader ("Teleport Tether", block 4077) to
+ * parity with the ChickenChunks loader and the Dimensional Anchor (PatchAP, patch apparity).
  *
- * The AdditionalPipes chunk loader (the "Teleport Tether", block 4077) keeps its area of chunks
- * force loaded through a Forge ticket, offline included, and the mod ships no switch to turn that
- * off. The apchunkgate patch calls {@link #apChunkLoadEnabled()} at the top of the loader tile's
- * tick: when it returns false the tile drops its ticket and returns, so it requests nothing and
- * loads nothing.
+ * The AP loader has no owner concept of its own, so the patch adds a tliteOwner field to the tile
+ * (set from the placer in the block's onBlockPlacedBy, persisted in NBT), forces the load distance
+ * to a single chunk, and gates the tile's tick on apShouldLoad: it force loads its one chunk only
+ * while the owner is online or within grace and under the shared per-player limit, exactly like the
+ * other two loaders. The added field is reached reflectively here since it does not exist in the
+ * stock jar this class compiles against.
  *
- * Teleport pipes are not touched. A teleport pipe removes itself from the network when its chunk
- * unloads, so an item sent toward a destination in an unloaded chunk finds no target and drops at
- * the source pipe instead of teleporting into an unloaded chunk.
- *
- * The flag lives in config/ChunkLoaderConversion.cfg beside the other mod configs and defaults to
- * off. It is read once, the first time a loader ticks, and the file is created with the default if
- * it is missing. This helper touches no Minecraft class, so it is plain Java.
+ * A master switch (config/ChunkLoaderConversion.cfg additionalpipes.chunkloader.enabled, now
+ * defaulting on) can turn the loader off entirely. World and coordinates come from the tile as a
+ * vanilla TileEntity (any: k = worldObj, l/m/n), the username from EntityPlayer (qx.bR).
  */
 public class TLiteAP {
 
@@ -27,7 +26,7 @@ public class TLiteAP {
 
     private static volatile Boolean enabled;
 
-    /** True only if the config explicitly enables the AdditionalPipes chunk loader. */
+    /** Master switch; defaults on now that the loader is a capped, owner-tracked single-chunk loader. */
     public static boolean apChunkLoadEnabled() {
         Boolean e = enabled;
         if (e == null) {
@@ -36,11 +35,95 @@ public class TLiteAP {
         return e.booleanValue();
     }
 
+    // ------------------------------------------------------------ tick gate
+
+    /** s() calls this: force load only while enabled, owned, online/grace and under the shared cap. */
+    public static boolean apShouldLoad(Object tile) {
+        try {
+            if (!apChunkLoadEnabled()) return false;
+            String owner = owner(tile);
+            if (owner == null || owner.length() == 0) return false; // ownerless (legacy) stays off
+            any te = (any) tile;
+            return TLiteChunkQuota.apClaim(owner, te.k, te.l, te.m, te.n);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    // ------------------------------------------------------------ placement / NBT
+
+    /** BlockChunkLoader.onBlockPlacedBy: record the placer as the loader's owner and message them. */
+    public static void apPlaced(yc world, int x, int y, int z, md placer) {
+        try {
+            if (world.I) return; // server side only
+            if (!(placer instanceof qx)) return;
+            any tile = world.q(x, y, z);
+            if (!isApLoader(tile)) return;
+            String name = ((qx) placer).bR;
+            setOwner(tile, name);
+            TLiteChunkQuota.apAnnounce(name, world, x, y, z);
+        } catch (Throwable t) {
+            // best effort
+        }
+    }
+
+    /** readFromNBT tail: load the owner. */
+    public static void apLoadNBT(Object tile, bq nbt) {
+        try {
+            String s = nbt.i("tliteOwner");
+            setOwner(tile, (s == null || s.length() == 0) ? null : s);
+        } catch (Throwable t) {
+        }
+    }
+
+    /** writeToNBT tail: save the owner. */
+    public static void apSaveNBT(Object tile, bq nbt) {
+        try {
+            String o = owner(tile);
+            nbt.a("tliteOwner", o == null ? "" : o);
+        } catch (Throwable t) {
+        }
+    }
+
+    // ------------------------------------------------------------ reflective owner field (added by ASM)
+
+    private static Field ownerField;
+
+    private static Field ownerField(Object tile) throws Exception {
+        if (ownerField == null) {
+            ownerField = tile.getClass().getField("tliteOwner");
+            ownerField.setAccessible(true);
+        }
+        return ownerField;
+    }
+
+    private static String owner(Object tile) {
+        try {
+            return (String) ownerField(tile).get(tile);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static void setOwner(Object tile, String name) {
+        try {
+            ownerField(tile).set(tile, name);
+        } catch (Throwable t) {
+        }
+    }
+
+    private static boolean isApLoader(Object tile) {
+        return tile != null
+                && tile.getClass().getName().equals("buildcraft.additionalpipes.chunkloader.TileChunkLoader");
+    }
+
+    // ------------------------------------------------------------ config
+
     private static synchronized Boolean load() {
         if (enabled != null) {
             return enabled;
         }
-        boolean val = false;
+        boolean val = true;
         try {
             File f = new File(FILE);
             if (f.isFile()) {
@@ -51,12 +134,12 @@ public class TLiteAP {
                 } finally {
                     in.close();
                 }
-                val = Boolean.parseBoolean(p.getProperty(KEY, "false").trim());
+                val = Boolean.parseBoolean(p.getProperty(KEY, "true").trim());
             } else {
                 writeDefault(f);
             }
         } catch (Throwable t) {
-            // Config unreadable: keep the feature off, which is the safe default.
+            val = true;
         }
         enabled = Boolean.valueOf(val);
         return enabled;
@@ -71,20 +154,19 @@ public class TLiteAP {
             FileWriter w = new FileWriter(f);
             try {
                 w.write("# ChunkLoaderConversion\n");
-                w.write("# Set to true to let the AdditionalPipes chunk loader (Teleport Tether, block\n");
-                w.write("# 4077) force load chunks. Default false: the loader loads nothing. Teleport\n");
-                w.write("# pipes still move items between chunks that are already loaded.\n");
-                w.write(KEY + "=false\n");
+                w.write("# Master switch for the AdditionalPipes chunk loader (Teleport Tether, block 4077).\n");
+                w.write("# It is now a single-chunk, owner-tracked loader that counts against the shared\n");
+                w.write("# per-player limit and shuts down when its owner is offline. Set false to disable it.\n");
+                w.write(KEY + "=true\n");
                 w.write("\n");
-                w.write("# Combined per-player chunk-loader limit across ChickenChunks and Dimensional\n");
-                w.write("# Anchors. -1 (default) uses the ChickenChunks per-player limit (ChickenChunks.cfg\n");
-                w.write("# players{}). 0 means no cap. A value of 1 or more overrides it.\n");
+                w.write("# Combined per-player chunk-loader limit across ChickenChunks, Dimensional Anchors\n");
+                w.write("# and the Teleport Tether. -1 (default) uses the ChickenChunks per-player limit\n");
+                w.write("# (ChickenChunks.cfg players{}). 0 means no cap. A value of 1 or more overrides it.\n");
                 w.write("chunkloader.maxchunksperplayer=-1\n");
             } finally {
                 w.close();
             }
         } catch (Throwable t) {
-            // Best effort; a missing file just means the default is used every load.
         }
     }
 }

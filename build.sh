@@ -124,7 +124,7 @@ patch_one "LogisticsPipes" "$LP_SRC" "LogisticsPipes-MC1.4.7-0.7.0.96-patched.ja
           build/cls/TLiteLP.class
 
 patch_one "AdditionalPipes" "$AP_SRC" "AdditionalPipes2.1.3u42-BC3.4.2-MC1.4.7-patched.jar" \
-          PatchAP.java "teleowner,apchunkgate" \
+          PatchAP.java "teleowner,apparity" \
           build/cls/TLiteAP.class
 
 # ChunkLoaderConversion: force chunk loaders to a single chunk (spot loaders). Each mod's own
