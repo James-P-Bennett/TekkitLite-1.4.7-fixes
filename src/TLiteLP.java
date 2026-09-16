@@ -23,4 +23,20 @@ public class TLiteLP {
         }
         // anything else is a client trying to store a non-disk item to spawn later; dropped
     }
+
+    /**
+     * The request packet's amount is an unvalidated client int, and it sizes the crafting tree the
+     * server plans, so a value near Integer.MAX_VALUE can drive that planning as a denial of
+     * service. Clamp it to a bound far above any real request (a hundred thousand items) and floor
+     * negatives at zero. Injected at the RequestHandler.request/simulate item paths, right before
+     * ItemIdentifier.makeStack, so ordinary requests are unaffected.
+     */
+    public static final int MAX_REQUEST = 100000;
+
+    public static int clampAmount(int amount) {
+        if (amount < 0) {
+            return 0;
+        }
+        return amount > MAX_REQUEST ? MAX_REQUEST : amount;
+    }
 }

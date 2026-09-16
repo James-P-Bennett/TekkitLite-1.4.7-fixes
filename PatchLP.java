@@ -7,12 +7,18 @@ import java.util.zip.*;
 /**
  * Tekkit Lite 1.4.7 fixes: LogisticsPipes 0.7.0.96 patches.
  *
- *   diskdupe   ServerPacketHandler.onDiskChangeClientSide
- *              pipe.setDisk(packet.itemstack)  ->  TLiteLP.setDisk(pipe, packet.itemstack)
+ *   diskdupe      ServerPacketHandler.onDiskChangeClientSide
+ *                 pipe.setDisk(packet.itemstack)  ->  TLiteLP.setDisk(pipe, packet.itemstack)
+ *
+ *   requestclamp  RequestHandler.request and simulate
+ *                 packet.amount (before ItemIdentifier.makeStack) -> TLiteLP.clampAmount(amount)
  *
  * The disk-change packet stored a client-controlled ItemStack as a Request Pipe Mk2's disk, and
  * the disk-drop packet spawned it into the world: unlimited item creation. The store now only
  * accepts a real disk item.
+ *
+ * The request packet's amount is an unvalidated client int that sizes the crafting tree, so a
+ * near-max value is a denial of service; requestclamp bounds it well above any real request.
  *
  * usage: PatchLP <in.jar> <out.jar> <patch>[,<patch>...] <TLiteLP.class>
  */
@@ -21,19 +27,25 @@ public class PatchLP {
     static final String HANDLER = "logisticspipes/network/ServerPacketHandler";
     static final String PIPE = "logisticspipes/pipes/PipeItemsRequestLogisticsMk2";
     static final String HELPER = "TLiteLP";
+    static final String REQHANDLER = "logisticspipes/request/RequestHandler";
+    static final String PACKET = "logisticspipes/network/packets/PacketRequestSubmit";
+    static final String IDENT = "logisticspipes/utils/ItemIdentifier";
 
     static boolean doDisk;
     static int diskHits;
+    static boolean doClamp;
+    static int clampHits;
 
     public static void main(String[] args) throws Exception {
         if (args.length < 4) {
             System.err.println("usage: PatchLP <in.jar> <out.jar> <patches> <TLiteLP.class>");
-            System.err.println("patches: diskdupe");
+            System.err.println("patches: diskdupe, requestclamp");
             System.exit(2);
         }
         for (String p : args[2].split(",")) {
             p = p.trim();
             if (p.equals("diskdupe")) doDisk = true;
+            else if (p.equals("requestclamp")) doClamp = true;
             else throw new IllegalArgumentException("unknown patch: " + p);
         }
 
@@ -45,6 +57,7 @@ public class PatchLP {
             byte[] d = readAll(zf.getInputStream(ze));
             String n = ze.getName();
             if (doDisk && n.equals(HANDLER + ".class")) d = patchDisk(d);
+            if (doClamp && n.equals(REQHANDLER + ".class")) d = patchClamp(d);
             out.put(n, d);
         }
         zf.close();
@@ -55,6 +68,8 @@ public class PatchLP {
 
         if (doDisk && diskHits != 1)
             throw new IllegalStateException("diskdupe: expected 1 setDisk call, patched " + diskHits);
+        if (doClamp && clampHits != 2)
+            throw new IllegalStateException("requestclamp: expected 2 amount reads (request, simulate), patched " + clampHits);
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -79,6 +94,30 @@ public class PatchLP {
                 m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "setDisk",
                         "(L" + PIPE + ";Lur;)V", false));
                 diskHits++;
+            }
+        }
+        return write(cn);
+    }
+
+    /**
+     * Wherever a request reads packet.amount and passes it straight to ItemIdentifier.makeStack
+     * (the item request/simulate paths), route the value through TLiteLP.clampAmount first. The
+     * liquid path reads amount in millibuckets through a different route and is left alone.
+     */
+    static byte[] patchClamp(byte[] in) {
+        ClassNode cn = read(in);
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.GETFIELD) continue;
+                FieldInsnNode fi = (FieldInsnNode) i;
+                if (!fi.owner.equals(PACKET) || !fi.name.equals("amount")) continue;
+                AbstractInsnNode next = fi.getNext();
+                if (next == null || next.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
+                MethodInsnNode mk = (MethodInsnNode) next;
+                if (!mk.owner.equals(IDENT) || !mk.name.equals("makeStack")) continue;
+                m.instructions.insert(fi, new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "clampAmount", "(I)I", false));
+                clampHits++;
             }
         }
         return write(cn);

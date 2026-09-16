@@ -107,7 +107,7 @@ patch_one "BuildCraft" "$BC_SRC" "buildcraft-A-3.4.3-patched.jar" \
           build/cls/TLiteBC.class build/cls/TLiteProtect.class
 
 patch_one "ComputerCraft" "$CC_SRC" "ComputerCraft1.5-patched.zip" \
-          PatchCC.java "turtle,packets" \
+          PatchCC.java "turtle,packets,http" \
           build/cls/TLiteTurtle.class build/cls/TLiteProtect.class build/cls/TLiteCC.class
 
 patch_one "ThermalExpansion" "$TE_SRC" "ThermalExpansion-2.2.2.2-patched.zip" \
@@ -119,7 +119,7 @@ patch_one "IronChest" "$IRONCHEST_SRC" "ironchest-universal-1.4.7-5.1.0.275-patc
           build/cls/TLiteIronChest.class
 
 patch_one "LogisticsPipes" "$LP_SRC" "LogisticsPipes-MC1.4.7-0.7.0.96-patched.jar" \
-          PatchLP.java "diskdupe" \
+          PatchLP.java "diskdupe,requestclamp" \
           build/cls/TLiteLP.class
 
 patch_one "AdditionalPipes" "$AP_SRC" "AdditionalPipes2.1.3u42-BC3.4.2-MC1.4.7-patched.jar" \

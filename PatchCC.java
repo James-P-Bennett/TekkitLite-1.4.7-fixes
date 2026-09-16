@@ -21,8 +21,14 @@ import java.util.zip.*;
  *   packets  ComputerCraftProxyCommon.handlePacket
  *              entity.handlePacket(packet, player) -> TLiteCC.handlePacket(entity, packet, player)
  *
+ *   http     HTTPRequest.<init>(String, String)
+ *              after the protocol check: TLiteCC.checkHttpTarget(this.m_url), which throws when
+ *              the URL resolves to a loopback/LAN address, so the http API cannot reach the
+ *              server's own services or the local network
+ *
  * The turtle patch stops turtles editing claims. The packet patch stops any player driving
  * anyone else's computer or turtle from afar (typing into its terminal, rebooting it, etc.).
+ * The http patch stops a computer reaching localhost or the LAN through the http API.
  *
  * Turtles change and empty the blocks next to them with no protection check, so they dig, build
  * and move inside other players' claims.
@@ -36,6 +42,7 @@ public class PatchCC {
     static final String PROXY = "dan200/computer/shared/ComputerCraftProxyCommon";
     static final String NETWORKED = "dan200/computer/shared/INetworkedEntity";
     static final String BLOCK = "dan200/turtle/shared/BlockTurtle";
+    static final String HTTPREQ = "dan200/computer/core/HTTPRequest";
 
     static final String PLACED = "(Lyc;IIILmd;)V";
     static final String ACTIVATED = "(Lyc;IIILqx;IFFF)Z";
@@ -49,19 +56,20 @@ public class PatchCC {
         { "dropQuantity", "(II)Z", "1", "Turtle drop" },
     };
 
-    static boolean doTurtle, doPackets;
+    static boolean doTurtle, doPackets, doHttp;
     static final Map<String, Integer> hits = new LinkedHashMap<String, Integer>();
 
     public static void main(String[] args) throws Exception {
         if (args.length < 5) {
             System.err.println("usage: PatchCC <in.zip> <out.zip> <patches> <helper.class...>");
-            System.err.println("patches: turtle, packets");
+            System.err.println("patches: turtle, packets, http");
             System.exit(2);
         }
         for (String p : args[2].split(",")) {
             p = p.trim();
             if (p.equals("turtle")) doTurtle = true;
             else if (p.equals("packets")) doPackets = true;
+            else if (p.equals("http")) doHttp = true;
             else throw new IllegalArgumentException("unknown patch: " + p);
         }
 
@@ -75,6 +83,7 @@ public class PatchCC {
             if (doTurtle && n.equals(TILE + ".class")) d = patchTile(d);
             if (doTurtle && n.equals(BLOCK + ".class")) d = patchBlock(d);
             if (doPackets && n.equals(PROXY + ".class")) d = patchProxy(d);
+            if (doHttp && n.equals(HTTPREQ + ".class")) d = patchHttp(d);
             out.put(n, d);
         }
         zf.close();
@@ -101,6 +110,12 @@ public class PatchCC {
 
         if (doPackets && !hits.containsKey("packets"))
             throw new IllegalStateException("packets: expected 1 handlePacket dispatch, patched none");
+
+        if (doHttp) {
+            Integer got = hits.get("http");
+            if (got == null || got != 1)
+                throw new IllegalStateException("http: expected 1 constructor guard, patched " + got);
+        }
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -182,6 +197,47 @@ public class PatchCC {
                 m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteCC", "handlePacket",
                         "(L" + NETWORKED + ";" + mi.desc.substring(1), false));
                 hit("packets");
+            }
+        }
+        return write(cn);
+    }
+
+    static final String HTTPEXC = "dan200/computer/core/HTTPRequestException";
+
+    /**
+     * In HTTPRequest.<init>(String,String), after the http/https protocol check and outside its
+     * URL-parse try, insert: if (TLiteCC.isBlockedHttp(this.m_url)) throw new HTTPRequestException(
+     * "Blocked..."). The throw is built in place because HTTPRequestException is package private
+     * to dan200.computer.core (this class is in that package), so it cannot be thrown from the
+     * default-package helper. HTTPAPI.callMethod catches it like any bad-URL rejection, so a
+     * blocked request fails cleanly in Lua. Anchored on the first field init (putfield
+     * m_cancelled), the instruction right after the protocol validation.
+     */
+    static byte[] patchHttp(byte[] in) {
+        ClassNode cn = read(in);
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("<init>") || !m.desc.equals("(Ljava/lang/String;Ljava/lang/String;)V")) continue;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.PUTFIELD) continue;
+                FieldInsnNode fi = (FieldInsnNode) i;
+                if (!fi.owner.equals(HTTPREQ) || !fi.name.equals("m_cancelled")) continue;
+                AbstractInsnNode aload0 = fi.getPrevious().getPrevious(); // ICONST_0 then ALOAD_0
+                LabelNode ok = new LabelNode();
+                InsnList g = new InsnList();
+                g.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                g.add(new FieldInsnNode(Opcodes.GETFIELD, HTTPREQ, "m_url", "Ljava/net/URL;"));
+                g.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteCC", "isBlockedHttp", "(Ljava/net/URL;)Z", false));
+                g.add(new JumpInsnNode(Opcodes.IFEQ, ok));
+                g.add(new TypeInsnNode(Opcodes.NEW, HTTPEXC));
+                g.add(new InsnNode(Opcodes.DUP));
+                g.add(new LdcInsnNode("Blocked: local or private address"));
+                g.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, HTTPEXC, "<init>", "(Ljava/lang/String;)V", false));
+                g.add(new InsnNode(Opcodes.ATHROW));
+                g.add(ok);
+                m.instructions.insertBefore(aload0, g);
+                m.maxStack = Math.max(m.maxStack, 3);
+                hit("http");
             }
         }
         return write(cn);

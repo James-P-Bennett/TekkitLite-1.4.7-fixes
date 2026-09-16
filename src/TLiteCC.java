@@ -1,4 +1,6 @@
 import java.lang.reflect.Field;
+import java.net.InetAddress;
+import java.net.URL;
 
 import dan200.computer.shared.ComputerCraftPacket;
 import dan200.computer.shared.ContainerComputer;
@@ -85,5 +87,41 @@ public class TLiteCC {
         Field f = cls.getDeclaredField(name);
         f.setAccessible(true);
         return f;
+    }
+
+    /**
+     * The http API resolves the URL and connects with no host filter, so a computer can read the
+     * server's own services (dynmap, admin panels) or other machines on the LAN. The http patch
+     * calls this at the head of HTTPRequest's constructor and, when it returns true, throws that
+     * class's own HTTPRequestException (built in place, since that type is package private), which
+     * surfaces to Lua as an ordinary http failure. Returns true for a URL whose host is missing,
+     * unresolvable, or resolves to a loopback, wildcard, link-local, site-local (private LAN) or
+     * IPv6 unique-local address. Public destinations return false and are untouched.
+     */
+    public static boolean isBlockedHttp(URL url) {
+        String host = (url == null) ? null : url.getHost();
+        if (host == null || host.length() == 0) {
+            return true;
+        }
+        InetAddress[] addrs;
+        try {
+            addrs = InetAddress.getAllByName(host);
+        } catch (Throwable t) {
+            return true; // fail closed: an unresolvable host is not worth reaching
+        }
+        for (int i = 0; i < addrs.length; i++) {
+            InetAddress a = addrs[i];
+            if (a.isLoopbackAddress() || a.isAnyLocalAddress() || a.isLinkLocalAddress()
+                    || a.isSiteLocalAddress() || isUniqueLocalV6(a)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** IPv6 unique-local addresses (fc00::/7), which isSiteLocalAddress does not cover. */
+    private static boolean isUniqueLocalV6(InetAddress a) {
+        byte[] b = a.getAddress();
+        return b != null && b.length == 16 && (b[0] & 0xFE) == 0xFC;
     }
 }

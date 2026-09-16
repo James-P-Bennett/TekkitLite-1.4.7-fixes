@@ -85,6 +85,8 @@ import dan200.computer.shared.TileEntityComputer;
  *   tlfix da         immibis Dimensional Anchor pinned to its own chunk regardless of radius
  *   tlfix apgate     AdditionalPipes chunk loader off by default (ChunkLoaderConversion config)
  *   tlfix quota      one combined per-player chunk cap shared by ChickenChunks and anchors
+ *   tlfix cchttp     ComputerCraft http API host filter: public allowed, loopback/LAN blocked
+ *   tlfix lpclamp    LogisticsPipes request amount clamp bounds a DoS quantity
  *
  * The claim is owned by "Owner" and every action is done by the fake player "Intruder", who
  * has no trust in it. Default package so the obfuscated vanilla classes can be named.
@@ -97,7 +99,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -129,6 +131,8 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("da")) da(sender);
             else if (s.equals("apgate")) apgate(sender);
             else if (s.equals("quota")) quota(sender);
+            else if (s.equals("cchttp")) cchttp(sender);
+            else if (s.equals("lpclamp")) lpclamp(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -1064,6 +1068,28 @@ public class TLFixTest extends JavaPlugin {
         anchor.owner = "QuotaTester";
         boolean anchorAllowed = TLiteChunkQuota.daClaim(anchor);
         sender.sendMessage(TAG + "quota: ChickenChunks claims allowed " + allowed + " of 5, same-owner anchor allowed " + anchorAllowed + "  (expect 3 and false)");
+    }
+
+    /** LogisticsPipes request clamp: legit amounts pass through, huge/negative ones are bounded. */
+    private void lpclamp(CommandSender sender) {
+        int[] in = { 5, 64, 100000, 100001, Integer.MAX_VALUE, -7 };
+        StringBuilder sb = new StringBuilder();
+        for (int v : in) sb.append(v).append("->").append(TLiteLP.clampAmount(v)).append("  ");
+        sender.sendMessage(TAG + "lpclamp: " + sb + " (expect <=100000, negatives 0, small unchanged)");
+    }
+
+    /** ComputerCraft http host filter: public destinations pass, loopback/LAN are blocked. */
+    private void cchttp(CommandSender sender) throws Exception {
+        String[] pub = { "http://8.8.8.8/", "http://1.1.1.1/x" };
+        String[] blk = { "http://127.0.0.1:8123/", "http://localhost/", "http://10.1.2.3/",
+                "http://192.168.0.5/", "http://172.16.5.5/", "http://169.254.1.1/", "http://0.0.0.0/" };
+        int pubAllowed = 0;
+        for (String u : pub) if (!TLiteCC.isBlockedHttp(new java.net.URL(u))) pubAllowed++;
+        int blkBlocked = 0;
+        for (String u : blk) if (TLiteCC.isBlockedHttp(new java.net.URL(u))) blkBlocked++;
+        sender.sendMessage(TAG + "cchttp: public allowed " + pubAllowed + "/" + pub.length
+                + ", local/LAN blocked " + blkBlocked + "/" + blk.length
+                + "  (expect " + pub.length + " and " + blk.length + ")");
     }
 
     private static int diamonds(iq player) {
