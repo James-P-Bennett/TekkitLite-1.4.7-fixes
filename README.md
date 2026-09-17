@@ -1284,8 +1284,7 @@ Builds every patched jar, `TLiteFixes-coremod.jar` and `TekkitCustomizer.jar`. N
 classes and the plugin, ASM, and the server's `mcpcplus.jar`.
 
 Override paths with `MODS`, `COREMODS`, `MCPC`, `MFR_SRC`, `EE3_SRC`, `AE_SRC`, `FZ_SRC`, `TC_SRC`,
-`NEI_SRC`, `ASM`, `JAVAC8`. `MODS` defaults to the PolyMC Tekkit Lite instance, whose mod jars are identical to
-the server's.
+`NEI_SRC`, `ASM`, `JAVAC8`.
 
 Minecraft 1.4.7 has no runtime deobfuscation, so the helper classes use the obfuscated
 vanilla names (`ur` is ItemStack, `yc` is World) and sit in the default package, the only place
