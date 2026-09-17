@@ -1,7 +1,11 @@
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileWriter;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
+
+import org.bukkit.Bukkit;
 
 /**
  * Claim guards injected by TekkitLite-1.4.7-fixes into Dimensional Doors 1.3.2 (PatchDD).
@@ -47,24 +51,31 @@ public class TLiteDD {
         TLiteProtect.refused(player, "Rift Blade at " + x + "," + y + "," + z + " (protected)");
     }
 
-    // ------------------------------------------------------------ non-dimension item switches
+    // ------------------------------------------------------------ config switches
 
     private static final String CFG = "config/DimensionalDoorsTweaks.cfg";
     private static final String SWORD_ONLY = "riftBlade.swordOnly";
     private static final String REMOVER_ENABLED = "riftRemover.enabled";
+    private static final String POCKETS = "pocketDimensions.enabled";
+    private static final String DUNGEONS = "dungeons.enabled";
+    private static final String LIMBO = "limbo.enabled";
+    private static final String WORLDGEN = "worldgenSpawns.enabled";
 
-    private static volatile Boolean swordOnly;
-    private static volatile Boolean removerEnabled;
+    private static volatile boolean loaded;
+    private static boolean swordOnlyFlag;         // default false
+    private static boolean removerEnabledFlag = true;
+    private static boolean pocketsFlag = true;
+    private static boolean dungeonsFlag = true;
+    private static boolean limboFlag = true;
+    private static boolean worldgenFlag = true;
 
     /**
      * When true, the Rift Blade's rift-opening is disabled: PatchDD makes its right-click methods
      * no-ops, leaving only the melee attack, so it behaves as a plain sword everywhere. Default off.
      */
     public static boolean swordOnly() {
-        if (swordOnly == null) {
-            load();
-        }
-        return swordOnly.booleanValue();
+        if (!loaded) { load(); }
+        return swordOnlyFlag;
     }
 
     /**
@@ -72,18 +83,80 @@ public class TLiteDD {
      * (the Remover only closes rifts, it never creates anything).
      */
     public static boolean riftRemoverEnabled() {
-        if (removerEnabled == null) {
-            load();
+        if (!loaded) { load(); }
+        return removerEnabledFlag;
+    }
+
+    /** Gate for DungeonGenerator.generateDungeonlink: false skips it, so a rift-pocket has no dungeon. */
+    public static boolean dungeonsEnabled() {
+        if (!loaded) { load(); }
+        return dungeonsFlag;
+    }
+
+    /** Gate for RiftGenerator.generate: false blocks the mod from spawning rifts/doors in worldgen. */
+    public static boolean worldgenSpawnsEnabled() {
+        if (!loaded) { load(); }
+        return worldgenFlag;
+    }
+
+    /**
+     * Gate at dimHelper.teleportToLimbo: when Limbo is disabled, cancel the teleport (return true) and
+     * tell the player. Called with the travelling player.
+     */
+    public static boolean limboDenied(qx player) {
+        if (!loaded) { load(); }
+        if (limboFlag) {
+            return false;
         }
-        return removerEnabled.booleanValue();
+        message(player, "§c[Dimensional Doors] Limbo is disabled on this server.");
+        return true;
+    }
+
+    /**
+     * Gate at dimHelper.teleportToPocket: when pocket dimensions are disabled, cancel the teleport
+     * (return true) for any entity and tell the player if it is one. Dungeons are pocket dimensions,
+     * so this blocks entering them too.
+     */
+    public static boolean pocketDenied(lq entity) {
+        if (!loaded) { load(); }
+        if (pocketsFlag) {
+            return false;
+        }
+        if (entity instanceof qx) {
+            message((qx) entity, "§c[Dimensional Doors] Pocket dimensions are disabled on this server.");
+        }
+        return true;
+    }
+
+    // Throttle so a player standing in a door does not get spammed each tick.
+    private static final long MSG_INTERVAL_MS = 5000L;
+    private static final Map lastMsg = new HashMap();   // username -> Long
+
+    private static void message(qx player, String text) {
+        if (player == null) {
+            return;
+        }
+        try {
+            String name = String.valueOf(player.bR);
+            long now = System.currentTimeMillis();
+            Long last = (Long) lastMsg.get(name);
+            if (last != null && now - last.longValue() < MSG_INTERVAL_MS) {
+                return;
+            }
+            lastMsg.put(name, Long.valueOf(now));
+            org.bukkit.entity.Player p = Bukkit.getPlayerExact(name);
+            if (p != null) {
+                p.sendMessage(text);
+            }
+        } catch (Throwable t) {
+            // messaging is best effort
+        }
     }
 
     private static synchronized void load() {
-        if (swordOnly != null && removerEnabled != null) {
+        if (loaded) {
             return;
         }
-        boolean sword = false;
-        boolean remover = true;
         try {
             File f = new File(CFG);
             if (f.isFile()) {
@@ -94,17 +167,19 @@ public class TLiteDD {
                 } finally {
                     in.close();
                 }
-                sword = Boolean.parseBoolean(p.getProperty(SWORD_ONLY, "false").trim());
-                remover = Boolean.parseBoolean(p.getProperty(REMOVER_ENABLED, "true").trim());
+                swordOnlyFlag = Boolean.parseBoolean(p.getProperty(SWORD_ONLY, "false").trim());
+                removerEnabledFlag = Boolean.parseBoolean(p.getProperty(REMOVER_ENABLED, "true").trim());
+                pocketsFlag = Boolean.parseBoolean(p.getProperty(POCKETS, "true").trim());
+                dungeonsFlag = Boolean.parseBoolean(p.getProperty(DUNGEONS, "true").trim());
+                limboFlag = Boolean.parseBoolean(p.getProperty(LIMBO, "true").trim());
+                worldgenFlag = Boolean.parseBoolean(p.getProperty(WORLDGEN, "true").trim());
             } else {
                 writeDefault(f);
             }
         } catch (Throwable t) {
-            sword = false;
-            remover = true;
+            // keep the safe defaults set on the fields
         }
-        swordOnly = Boolean.valueOf(sword);
-        removerEnabled = Boolean.valueOf(remover);
+        loaded = true;
     }
 
     private static void writeDefault(File f) {
@@ -115,15 +190,31 @@ public class TLiteDD {
             }
             FileWriter w = new FileWriter(f);
             try {
-                w.write("# Dimensional Doors non-dimension item tweaks (TekkitLite-1.4.7-fixes).\n");
+                w.write("# Dimensional Doors tweaks (TekkitLite-1.4.7-fixes).\n");
                 w.write("\n");
                 w.write("# true makes the Rift Blade a plain sword: right-click no longer opens rifts\n");
                 w.write("# or teleports, only the melee attack remains. Default false.\n");
                 w.write(SWORD_ONLY + "=false\n");
                 w.write("\n");
-                w.write("# false makes the Rift Remover inert (right-click does nothing). The Remover only\n");
-                w.write("# closes rifts, it never creates a dimension. Default true.\n");
+                w.write("# false makes the Rift Remover inert (right-click does nothing). Default true.\n");
                 w.write(REMOVER_ENABLED + "=true\n");
+                w.write("\n");
+                w.write("# false blocks entering pocket dimensions: going through a dimensional door is\n");
+                w.write("# cancelled and the player is told. Dungeons are pocket dimensions, so this\n");
+                w.write("# blocks entering them too. Default true.\n");
+                w.write(POCKETS + "=true\n");
+                w.write("\n");
+                w.write("# false stops rift-pockets being filled with a dungeon (the pocket is left empty).\n");
+                w.write("# Default true.\n");
+                w.write(DUNGEONS + "=true\n");
+                w.write("\n");
+                w.write("# false blocks entering Limbo: the teleport is cancelled and the player is told.\n");
+                w.write("# Default true.\n");
+                w.write(LIMBO + "=true\n");
+                w.write("\n");
+                w.write("# false stops the mod from spawning rifts or doors during world generation.\n");
+                w.write("# Default true.\n");
+                w.write(WORLDGEN + "=true\n");
             } finally {
                 w.close();
             }

@@ -28,14 +28,23 @@ public class PatchDD {
     static final String BLADE = PKG + "ItemRiftBlade";
     static final String SIG = PKG + "itemLinkSignature";
     static final String REMOVER = PKG + "itemRiftRemover";
+    static final String DIMHELPER = PKG + "dimHelper";
+    static final String DUNGEONGEN = PKG + "DungeonGenerator";
+    static final String RIFTGEN = PKG + "RiftGenerator";
     static final String HELPER = "TLiteDD";
+    static final String LINK = "LStevenDimDoors/mod_pocketDim/LinkData;";
     static final String ONITEMUSE = "(Lur;Lqx;Lyc;IIIIFFF)Z";
     static final String RIGHTCLICK = "(Lur;Lyc;Lqx;)Lur;";
     static final String STOPPED = "(Lur;Lyc;Lqx;I)V";
     static final String PLACER = "(Lyc;IIIILamq;)V";
+    static final String TP_LIMBO = "(Lyc;" + LINK + "Lqx;)V";
+    static final String TP_POCKET = "(Lyc;" + LINK + "Llq;)V";
+    static final String DUNGEON = "(" + LINK + ")V";
+    static final String WORLDGEN = "(Ljava/util/Random;IILyc;Lzw;Lzw;)V";
 
     static boolean doRifts;
     static int guardHits, redirectHits, swordHits, removerHits;
+    static int limboHits, pocketHits, dungeonHits, worldgenHits;
 
     public static void main(String[] args) throws Exception {
         if (args.length < 4) {
@@ -56,7 +65,9 @@ public class PatchDD {
             byte[] d = readAll(zf.getInputStream(ze));
             String n = ze.getName();
             if (doRifts && (n.equals(DIMDOOR + ".class") || n.equals(BLADE + ".class")
-                    || n.equals(SIG + ".class") || n.equals(REMOVER + ".class"))) {
+                    || n.equals(SIG + ".class") || n.equals(REMOVER + ".class")
+                    || n.equals(DIMHELPER + ".class") || n.equals(DUNGEONGEN + ".class")
+                    || n.equals(RIFTGEN + ".class"))) {
                 d = patch(d);
             }
             out.put(n, d);
@@ -67,9 +78,12 @@ public class PatchDD {
             out.put(f.getName(), readAll(new FileInputStream(f)));
         }
 
-        if (doRifts && (guardHits != 3 || redirectHits != 2 || swordHits != 3 || removerHits != 1))
-            throw new IllegalStateException("rifts: expected guard 3, redirect 2, sword 3, remover 1; patched "
-                    + guardHits + ", " + redirectHits + ", " + swordHits + ", " + removerHits);
+        if (doRifts && (guardHits != 3 || redirectHits != 2 || swordHits != 3 || removerHits != 1
+                || limboHits != 1 || pocketHits != 1 || dungeonHits != 1 || worldgenHits != 1))
+            throw new IllegalStateException("rifts: expected guard 3, redirect 2, sword 3, remover 1, "
+                    + "limbo 1, pocket 1, dungeon 1, worldgen 1; patched " + guardHits + ", " + redirectHits
+                    + ", " + swordHits + ", " + removerHits + ", " + limboHits + ", " + pocketHits + ", "
+                    + dungeonHits + ", " + worldgenHits);
 
         ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(args[1])));
         for (Map.Entry<String, byte[]> en : out.entrySet()) {
@@ -84,6 +98,45 @@ public class PatchDD {
     static byte[] patch(byte[] in) {
         ClassNode cn = read(in);
         boolean isBlade = cn.name.equals(BLADE);
+
+        // dimHelper: cancel the teleport into Limbo / a pocket when that type is disabled.
+        if (cn.name.equals(DIMHELPER)) {
+            for (Object mo : cn.methods) {
+                MethodNode m = (MethodNode) mo;
+                if (m.name.equals("teleportToLimbo") && m.desc.equals(TP_LIMBO)) {
+                    gateReturnIfTrue(m, 3, "Lqx;", "limboDenied");   // player in slot 3
+                    limboHits++;
+                } else if (m.name.equals("teleportToPocket") && m.desc.equals(TP_POCKET)) {
+                    gateReturnIfTrue(m, 3, "Llq;", "pocketDenied");  // entity in slot 3
+                    pocketHits++;
+                }
+            }
+            return write(cn);
+        }
+
+        // DungeonGenerator: skip dungeon generation when dungeons are disabled (empty pocket instead).
+        if (cn.name.equals(DUNGEONGEN)) {
+            for (Object mo : cn.methods) {
+                MethodNode m = (MethodNode) mo;
+                if (m.name.equals("generateDungeonlink") && m.desc.equals(DUNGEON)) {
+                    gateReturnIfFalse(m, "dungeonsEnabled");
+                    dungeonHits++;
+                }
+            }
+            return write(cn);
+        }
+
+        // RiftGenerator: block the mod spawning rifts/doors in worldgen when disabled.
+        if (cn.name.equals(RIFTGEN)) {
+            for (Object mo : cn.methods) {
+                MethodNode m = (MethodNode) mo;
+                if (m.name.equals("generate") && m.desc.equals(WORLDGEN)) {
+                    gateReturnIfFalse(m, "worldgenSpawnsEnabled");
+                    worldgenHits++;
+                }
+            }
+            return write(cn);
+        }
 
         // Rift Remover: its right-click closes a rift; gate it on the enable switch (no-op when off).
         if (cn.name.equals(REMOVER)) {
@@ -155,6 +208,31 @@ public class PatchDD {
             }
         }
         return write(cn);
+    }
+
+    /** Prepend {@code if (TLiteDD.<helper>(argSlot)) return;} at a void method's entry. */
+    static void gateReturnIfTrue(MethodNode m, int argSlot, String argType, String helper) {
+        LabelNode cont = new LabelNode();
+        InsnList c = new InsnList();
+        c.add(new VarInsnNode(Opcodes.ALOAD, argSlot));
+        c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, helper, "(" + argType + ")Z", false));
+        c.add(new JumpInsnNode(Opcodes.IFEQ, cont));
+        c.add(new InsnNode(Opcodes.RETURN));
+        c.add(cont);
+        m.instructions.insert(c);
+        m.maxStack = Math.max(m.maxStack, 1);
+    }
+
+    /** Prepend {@code if (!TLiteDD.<helper>()) return;} at a void method's entry. */
+    static void gateReturnIfFalse(MethodNode m, String helper) {
+        LabelNode cont = new LabelNode();
+        InsnList c = new InsnList();
+        c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, helper, "()Z", false));
+        c.add(new JumpInsnNode(Opcodes.IFNE, cont));
+        c.add(new InsnNode(Opcodes.RETURN));
+        c.add(cont);
+        m.instructions.insert(c);
+        m.maxStack = Math.max(m.maxStack, 1);
     }
 
     /** Prepend {@code if (TLiteDD.swordOnly()) return <no-op>;} so the blade acts as a plain sword. */

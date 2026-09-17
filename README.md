@@ -1234,9 +1234,36 @@ server-side; the Stable Fabric item is only a door crafting ingredient (its righ
 leftover debug print that places nothing), so it needs no guard either.
 
 **Verified**: build asserts the exact counts (3 `onItemUse` guards, 2 blade placement redirects,
-3 sword-only gates, 1 rift-remover gate);
-the target classes are v50, so no stack-map frames are needed. Not exercised on the test server,
-which does not run Dimensional Doors.
+3 sword-only gates, 1 rift-remover gate, 1 Limbo gate, 1 pocket gate, 1 dungeon gate, 1 worldgen
+gate); the target classes are v50, so no stack-map frames are needed. Not exercised on the test
+server, which does not run Dimensional Doors.
+
+</details>
+
+<details>
+<summary><b><code>rifts</code>: per-type dimension access toggles</b></summary>
+
+Four more switches in `config/DimensionalDoorsTweaks.cfg` gate the dimensions themselves, at their
+teleport and generation choke points. Dungeons are a kind of pocket dimension entered through the
+same teleport as personal pockets, so the split is hierarchical rather than fully independent.
+
+- `pocketDimensions.enabled` (default `true`): when `false`, `dimHelper.teleportToPocket` returns
+  early for any entity, so going through a dimensional door does nothing; a player is told once
+  (throttled) that pocket dimensions are disabled. Dungeons are pockets, so this blocks them too.
+- `dungeons.enabled` (default `true`): when `false`, `DungeonGenerator.generateDungeonlink` is
+  skipped, so a rift-pocket is generated empty instead of filled with a dungeon. Personal pockets
+  still work.
+- `limbo.enabled` (default `true`): when `false`, `dimHelper.teleportToLimbo` returns early and the
+  player is told, so rifts and the blade cannot drop anyone into Limbo.
+- `worldgenSpawns.enabled` (default `true`): when `false`, `RiftGenerator.generate` returns
+  immediately, so the mod spawns no rifts or doors during world generation (independent of the
+  mod's own natural-generation config).
+
+Player messages are sent through Bukkit and throttled to once per five seconds per player so a
+player standing in a disabled door is not spammed. In-dimension block edits are still left alone.
+
+**Verified**: build asserts one gate injected into each of `teleportToPocket`, `teleportToLimbo`,
+`generateDungeonlink` and `RiftGenerator.generate`; all four classes are v50.
 
 </details>
 
