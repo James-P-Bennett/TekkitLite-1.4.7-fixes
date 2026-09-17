@@ -75,6 +75,13 @@ public class TLiteTransformer implements IClassTransformer {
     static final String PUMP = "ic2/core/block/machine/tileentity/TileEntityPump";
     static final String TERRA = "ic2/core/block/machine/tileentity/TileEntityTerra";
     static final String SPRAYER = "ic2/core/item/tool/ItemSprayer";
+    static final String CABLE = "ic2/core/item/block/ItemCable";
+    static final String BARREL = "ic2/core/item/block/ItemBarrel";
+    static final String RESIN = "ic2/core/item/ItemResin";
+    static final String LUMINATOR = "ic2/core/item/block/ItemLuminator";
+    static final String CELL = "ic2/core/item/ItemCell";
+    static final String PLACE_BLOCK_AT = "(Lur;Lqx;Lyc;IIIIFFFI)Z";
+    static final String CELL_USE = "(Lur;Lyc;Lqx;)Lur;";
 
     public byte[] transform(String name, byte[] bytes) {
         if (name == null || bytes == null) {
@@ -88,7 +95,9 @@ public class TLiteTransformer implements IClassTransformer {
                 && !internal.equals(THERMO) && !internal.equals(GRATE) && !internal.equals(GRATE_PF)
                 && !internal.equals(WRENCH) && !internal.equals(HOE) && !internal.equals(MULTIID)
                 && !internal.equals(ELECMACHINE) && !internal.equals(MINER) && !internal.equals(PUMP)
-                && !internal.equals(TERRA) && !internal.equals(SPRAYER)) {
+                && !internal.equals(TERRA) && !internal.equals(SPRAYER) && !internal.equals(CABLE)
+                && !internal.equals(BARREL) && !internal.equals(RESIN) && !internal.equals(LUMINATOR)
+                && !internal.equals(CELL)) {
             return bytes;
         }
         try {
@@ -124,14 +133,19 @@ public class TLiteTransformer implements IClassTransformer {
         else if (internal.equals(THERMO)) ok = patchThermopile(cn);
         else if (internal.equals(GRATE)) ok = patchGrate(cn);
         else if (internal.equals(GRATE_PF)) ok = patchGratePF(cn);
-        else if (internal.equals(WRENCH)) ok = patchToolEdit(cn, "onItemUseFirst", ITEM_USE);
-        else if (internal.equals(HOE)) ok = patchToolEdit(cn, "a", ITEM_USE);
+        else if (internal.equals(WRENCH)) ok = patchToolEdits(cn, "onItemUseFirst", ITEM_USE, 2, 1);
+        else if (internal.equals(HOE)) ok = patchToolEdits(cn, "a", ITEM_USE, 2, 1);
         else if (internal.equals(MULTIID)) ok = patchMultiID(cn);
         else if (internal.equals(ELECMACHINE)) ok = patchElecMachine(cn);
         else if (internal.equals(MINER)) ok = patchMachineEdits(cn, 5);
         else if (internal.equals(PUMP)) ok = patchMachineEdits(cn, 2);
         else if (internal.equals(TERRA)) ok = patchMachineEdits(cn, 2);
-        else if (internal.equals(SPRAYER)) ok = patchItemGuard(cn, "a", ITEM_USE);
+        else if (internal.equals(SPRAYER)) ok = patchSprayer(cn);
+        else if (internal.equals(CABLE)) ok = patchToolEdits(cn, "a", ITEM_USE, 2, 1);
+        else if (internal.equals(BARREL)) ok = patchToolEdits(cn, "a", ITEM_USE, 2, 1);
+        else if (internal.equals(RESIN)) ok = patchToolEdits(cn, "a", ITEM_USE, 2, 2);
+        else if (internal.equals(LUMINATOR)) ok = patchToolEdits(cn, "placeBlockAt", PLACE_BLOCK_AT, 2, 1);
+        else if (internal.equals(CELL)) ok = patchToolEdits(cn, "a", CELL_USE, 3, 2);
         else ok = patchBag(cn);
         if (!ok) {
             return null;
@@ -323,12 +337,12 @@ public class TLiteTransformer implements IClassTransformer {
     }
 
     /**
-     * A right-click IC2 tool (Wrench dismantle, Electric Hoe till): redirect the world.setBlock in
-     * its use method to TLiteIC2.wrenchEdit, pushing the acting player (local 2, the qx arg of an
-     * onItemUse). The edit is then checked against that player, so it is refused inside a claim the
-     * player cannot build in and unchanged everywhere else.
+     * A right-click IC2 tool or placement item: in its use method, redirect world.setBlock
+     * (setBlockWithNotify or setBlockAndMetadataWithNotify) to TLiteIC2.wrenchEdit/wrenchEditMeta,
+     * pushing the acting player (the qx arg at playerLocal). The edit is then checked against that
+     * player, refused inside a claim they cannot build in and unchanged everywhere else.
      */
-    static boolean patchToolEdit(ClassNode cn, String mname, String mdesc) {
+    static boolean patchToolEdits(ClassNode cn, String mname, String mdesc, int playerLocal, int expected) {
         int hits = 0;
         for (Object mo : cn.methods) {
             MethodNode m = (MethodNode) mo;
@@ -336,14 +350,47 @@ public class TLiteTransformer implements IClassTransformer {
             for (AbstractInsnNode i : m.instructions.toArray()) {
                 if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
                 MethodInsnNode mi = (MethodInsnNode) i;
-                if (!mi.owner.equals("yc") || !mi.name.equals("e") || !mi.desc.equals("(IIII)Z")) continue;
-                m.instructions.insertBefore(mi, new VarInsnNode(Opcodes.ALOAD, 2));
-                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", "wrenchEdit", "(Lyc;IIIILqx;)Z"));
+                if (!mi.owner.equals("yc")) continue;
+                String target, desc;
+                if (mi.name.equals("e") && mi.desc.equals("(IIII)Z")) { target = "wrenchEdit"; desc = "(Lyc;IIIILqx;)Z"; }
+                else if (mi.name.equals("d") && mi.desc.equals("(IIIII)Z")) { target = "wrenchEditMeta"; desc = "(Lyc;IIIIILqx;)Z"; }
+                else continue;
+                m.instructions.insertBefore(mi, new VarInsnNode(Opcodes.ALOAD, playerLocal));
+                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", target, desc));
                 m.maxStack += 1;
                 hits++;
             }
         }
-        return hits == 1;
+        return hits == expected;
+    }
+
+    /**
+     * Foam Sprayer: record the acting player at the top of its use method (a, local 2), then
+     * redirect the world.setBlock inside sprayFoam to TLiteIC2.sprayEdit, so every foam block in the
+     * sprayed area is checked against that player, not just the clicked one.
+     */
+    static boolean patchSprayer(ClassNode cn) {
+        int setHits = 0, foamHits = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (m.name.equals("a") && m.desc.equals(ITEM_USE)) {
+                InsnList g = new InsnList();
+                g.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                g.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", "setSprayer", "(Lqx;)V"));
+                m.instructions.insert(g);
+                m.maxStack = Math.max(m.maxStack, 1);
+                setHits++;
+            } else if (m.name.equals("sprayFoam")) {
+                for (AbstractInsnNode i : m.instructions.toArray()) {
+                    if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
+                    MethodInsnNode mi = (MethodInsnNode) i;
+                    if (!mi.owner.equals("yc") || !mi.name.equals("e") || !mi.desc.equals("(IIII)Z")) continue;
+                    m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteIC2", "sprayEdit", "(Lyc;IIII)Z"));
+                    foamHits++;
+                }
+            }
+        }
+        return setHits == 1 && foamHits == 2;
     }
 
     /** BlockMultiID.onBlockPlacedBy: record the placer of an IC2 machine (its tile) for the guards. */
@@ -413,36 +460,6 @@ public class TLiteTransformer implements IClassTransformer {
             }
         }
         return hits == expected;
-    }
-
-    /**
-     * Prepends a claim check to an onItemUse method (Foam Sprayer): if the acting player (local 2)
-     * cannot build at the clicked block (locals 4/5/6), the item does nothing. Its own block edits
-     * are deeper (sprayFoam has no player), so this guards the clicked anchor block, the primary
-     * grief path; foam is cosmetic and removable.
-     */
-    static boolean patchItemGuard(ClassNode cn, String mname, String mdesc) {
-        int hits = 0;
-        for (Object mo : cn.methods) {
-            MethodNode m = (MethodNode) mo;
-            if (!m.name.equals(mname) || !m.desc.equals(mdesc)) continue;
-            InsnList g = new InsnList();
-            LabelNode ok = new LabelNode();
-            g.add(new VarInsnNode(Opcodes.ALOAD, 2));
-            g.add(new VarInsnNode(Opcodes.ALOAD, 3));
-            g.add(new VarInsnNode(Opcodes.ILOAD, 4));
-            g.add(new VarInsnNode(Opcodes.ILOAD, 5));
-            g.add(new VarInsnNode(Opcodes.ILOAD, 6));
-            g.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteProtect", "canEdit", "(Lqx;Lyc;III)Z"));
-            g.add(new JumpInsnNode(Opcodes.IFNE, ok));
-            g.add(new InsnNode(Opcodes.ICONST_0));
-            g.add(new InsnNode(Opcodes.IRETURN));
-            g.add(ok);
-            m.instructions.insert(g);
-            m.maxStack = Math.max(m.maxStack, 5);
-            hits++;
-        }
-        return hits == 1;
     }
 
     /** Adds the slotClick override; refuses when ContainerBag already has one. */
@@ -818,7 +835,7 @@ public class TLiteTransformer implements IClassTransformer {
             System.err.println("usage: TLiteTransformer <ic2.jar> <RedPowerCore.zip> <RedPowerMechanical.zip>");
             System.exit(2);
         }
-        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[0], POINTEXP }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER }, { args[0], NETMGR }, { args[2], SORTER }, { args[0], TESLA }, { args[2], MOTOR }, { args[2], THERMO }, { args[2], GRATE }, { args[2], GRATE_PF }, { args[0], WRENCH }, { args[0], HOE }, { args[0], MULTIID }, { args[0], ELECMACHINE }, { args[0], MINER }, { args[0], PUMP }, { args[0], TERRA }, { args[0], SPRAYER } };
+        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[0], POINTEXP }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER }, { args[0], NETMGR }, { args[2], SORTER }, { args[0], TESLA }, { args[2], MOTOR }, { args[2], THERMO }, { args[2], GRATE }, { args[2], GRATE_PF }, { args[0], WRENCH }, { args[0], HOE }, { args[0], MULTIID }, { args[0], ELECMACHINE }, { args[0], MINER }, { args[0], PUMP }, { args[0], TERRA }, { args[0], SPRAYER }, { args[0], CABLE }, { args[0], BARREL }, { args[0], RESIN }, { args[0], LUMINATOR }, { args[0], CELL } };
         boolean failed = false;
         for (String[] check : checks) {
             ZipFile zf = new ZipFile(check[0]);

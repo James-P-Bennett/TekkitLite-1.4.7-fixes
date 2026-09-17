@@ -234,6 +234,44 @@ public class TLiteIC2 {
         return false;
     }
 
+    /** setBlockAndMetadata variant of wrenchEdit, for placing tools (Cable, Resin, Luminator). */
+    public static boolean wrenchEditMeta(yc world, int x, int y, int z, int id, int meta, qx player) {
+        if (player == null || world == null) {
+            return false;
+        }
+        if (TLiteProtect.canEdit(player, world, x, y, z)) {
+            return world.d(x, y, z, id, meta);
+        }
+        TLiteProtect.refused(player, "IC2 tool at " + x + "," + y + "," + z + " (protected)");
+        return false;
+    }
+
+    // ------------------------------------------------------------ Foam Sprayer (per-foam-block guard)
+
+    private static qx sprayerPlayer;
+
+    /** ItemSprayer.a sets the acting player here before it calls sprayFoam. */
+    public static void setSprayer(qx player) {
+        sprayerPlayer = player;
+    }
+
+    /**
+     * Replaces the world.setBlock inside ItemSprayer.sprayFoam, which lays a whole area of foam.
+     * Each foam block is checked against the player recorded by setSprayer, so foam sprayed from
+     * open ground cannot spill across a claim border. sprayFoam is only ever called from the item's
+     * use method, so the player is always set.
+     */
+    public static boolean sprayEdit(yc world, int x, int y, int z, int id) {
+        qx player = sprayerPlayer;
+        if (player == null || world == null) {
+            return false;
+        }
+        if (TLiteProtect.canEdit(player, world, x, y, z)) {
+            return world.e(x, y, z, id);
+        }
+        return false;
+    }
+
     // ------------------------------------------------------------ automated IC2 machines (Miner, Pump, Terraformer)
 
     private static final java.util.Map machineOwners = new java.util.WeakHashMap();   // any -> String

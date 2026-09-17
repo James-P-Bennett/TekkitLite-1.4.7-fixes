@@ -104,7 +104,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn|iddump|dynamite|scmod|cartmine|frame|rpguard|wrench|ic2machine>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn|iddump|dynamite|scmod|cartmine|frame|rpguard|wrench|ic2machine|place>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -152,6 +152,7 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("rpguard")) rpguard(sender);
             else if (s.equals("wrench")) wrench(sender);
             else if (s.equals("ic2machine")) ic2machine(sender);
+            else if (s.equals("place")) place(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -1348,6 +1349,54 @@ public class TLFixTest extends JavaPlugin {
      * against a claim: an ownerless machine and an intruder-owned one are refused inside another
      * player's claim, the claim owner's own is allowed, and all are allowed on open ground.
      */
+    /**
+     * Drives the placement-item guard (TLiteIC2.wrenchEditMeta, used by Cable/Resin/Luminator) and
+     * the Foam Sprayer per-block guard (setSprayer + sprayEdit) against a claim.
+     */
+    private void place(CommandSender sender) throws Exception {
+        yc w = world();
+        org.bukkit.World bw = getServer().getWorlds().get(0);
+        Location spawn = bw.getSpawnLocation();
+        int cx = spawn.getBlockX(), cz = spawn.getBlockZ(), y = 40;
+        Location at = new Location(bw, cx, y, cz);
+        if (GriefPrevention.instance.dataStore.getClaimAt(at, true, null) == null) {
+            GriefPrevention.instance.dataStore.createClaim(bw, cx - 8, cx + 8, 0, 255, cz - 8, cz + 8, "Owner", null, null);
+        }
+        String mi = placeMetaCase(w, cx, y, cz, "Intruder");
+        String mo = placeMetaCase(w, cx + 1, y, cz, "Owner");
+        String si = sprayCase(w, cx + 2, y, cz, "Intruder");
+        String so = sprayCase(w, cx + 3, y, cz, "Owner");
+        String open = placeMetaCase(w, cx + 40, y, cz, "Intruder");
+        sender.sendMessage(TAG + "place: meta-intruder=" + mi + " meta-owner=" + mo
+                + "; spray-intruder=" + si + " spray-owner=" + so + "; open=" + open
+                + "  (expect refused, placed, refused, placed, placed)");
+    }
+
+    private String placeMetaCase(yc w, int x, int y, int z, String name) {
+        try {
+            getServer().getWorlds().get(0).loadChunk(x >> 4, z >> 4);
+            w.e(x, y, z, 0);
+            iq player = CraftFakePlayer.get(w, name, true);
+            boolean placed = TLiteIC2.wrenchEditMeta(w, x, y, z, 1, 0, player);
+            boolean stone = (w.a(x, y, z) == 1);
+            w.e(x, y, z, 0);
+            return (placed ? "placed" : "refused") + "/" + (stone ? "stone" : "air");
+        } catch (Throwable t) { return "ERR:" + t; }
+    }
+
+    private String sprayCase(yc w, int x, int y, int z, String name) {
+        try {
+            getServer().getWorlds().get(0).loadChunk(x >> 4, z >> 4);
+            w.e(x, y, z, 0);
+            iq player = CraftFakePlayer.get(w, name, true);
+            TLiteIC2.setSprayer(player);
+            boolean placed = TLiteIC2.sprayEdit(w, x, y, z, 1);
+            boolean stone = (w.a(x, y, z) == 1);
+            w.e(x, y, z, 0);
+            return (placed ? "placed" : "refused") + "/" + (stone ? "stone" : "air");
+        } catch (Throwable t) { return "ERR:" + t; }
+    }
+
     private void ic2machine(CommandSender sender) throws Exception {
         yc w = world();
         org.bukkit.World bw = getServer().getWorlds().get(0);
