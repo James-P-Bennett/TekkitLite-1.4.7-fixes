@@ -1212,9 +1212,8 @@ dimension id crashed the link server-side.
 
 | What | Status |
 |---|---|
-| Turtles placing vanilla blocks | MCPC+ asks plugins as the player "ComputerCraft" when a turtle places a vanilla block, so an owner's turtle may be refused in their own claim. Not checked. |
 | Tampered on-disk NBT crashing one chunk/tile load (Factorization slots, ACT Mk II recipe, immibis chunk loader shape, Mystcraft legacy biome) | Only reachable if the region file is already edited or corrupt, not by a player in game. Left as defensive hardening, not applied. |
-| Balance and lag bans: Nuke, chunk-loader caps | Server policy rather than bugs. The Nuke is now crash-fixed and claim-safe (see `explosion`) but kept banned by choice; chunk-loader caps are enforced by the loader feature. The Industrial and Howler alarms were unbanned (their only real vector, remote packet spam, is fixed by `packets`; placement is annoyance-only and claim-protected). |
+| Nuke kept banned | Server policy, not a bug. The Nuke is now crash-fixed and claim-safe (see `explosion`) but left banned by choice. (Chunk loaders are a finished feature, not an open item: single-chunk spot loaders under one shared per-player ChickenChunks cap across the anchor and Teleport Tether. The Industrial and Howler alarms were unbanned, their remote-spam vector fixed by `packets`.) |
 
 ---
 

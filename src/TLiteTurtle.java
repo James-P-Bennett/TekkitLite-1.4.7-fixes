@@ -78,6 +78,23 @@ public class TLiteTurtle {
     }
 
     /** Called at the end of TileEntityTurtle.readFromNBT. */
+    /**
+     * Sets the fake TurtlePlayer's username to the turtle's owner, so the block placements the
+     * turtle makes through the held item's onItemUse fire a BlockPlaceEvent as the owner (allowed
+     * in the owner's own claim, refused in others') instead of as "ComputerCraft" (refused
+     * everywhere, which stopped an owner's builder turtle inside its own claim). An ownerless
+     * turtle keeps "ComputerCraft" and so still builds only on open ground.
+     */
+    public static void nameTurtlePlayer(qx turtlePlayer, TileEntityTurtle turtle) {
+        try {
+            String owner = (String) owners.get(turtle);
+            if (owner != null && turtlePlayer != null) {
+                turtlePlayer.bR = owner;
+            }
+        } catch (Throwable t) {
+        }
+    }
+
     public static void load(any te, bq tag) {
         if (tag.b(OWNER_TAG)) {
             owners.put(te, tag.i(OWNER_TAG));

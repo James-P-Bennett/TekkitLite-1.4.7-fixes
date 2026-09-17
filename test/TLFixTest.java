@@ -104,7 +104,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn|iddump|dynamite|scmod|cartmine|frame|rpguard|wrench|ic2machine|place>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn|iddump|dynamite|scmod|cartmine|frame|rpguard|wrench|ic2machine|place|turtleplace>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -153,6 +153,7 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("wrench")) wrench(sender);
             else if (s.equals("ic2machine")) ic2machine(sender);
             else if (s.equals("place")) place(sender);
+            else if (s.equals("turtleplace")) turtleplace(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -1353,6 +1354,30 @@ public class TLFixTest extends JavaPlugin {
      * Drives the placement-item guard (TLiteIC2.wrenchEditMeta, used by Cable/Resin/Luminator) and
      * the Foam Sprayer per-block guard (setSprayer + sprayEdit) against a claim.
      */
+    /**
+     * Verifies the turtle placement fix: TLiteTurtle.nameTurtlePlayer renames the fake TurtlePlayer
+     * to the turtle's owner (so its BlockPlaceEvent is attributed to the owner, allowed in the
+     * owner's own claim), and leaves an ownerless turtle as "ComputerCraft".
+     */
+    private void turtleplace(CommandSender sender) throws Exception {
+        yc w = world();
+        dan200.turtle.shared.TileEntityTurtle owned = new dan200.turtle.shared.TileEntityTurtle();
+        bq nbt = new bq();
+        nbt.a("tliteOwner", "Owner");
+        TLiteTurtle.load(owned, nbt);
+        qx tp = new dan200.turtle.shared.TurtlePlayer(w);
+        String before = tp.bR;
+        TLiteTurtle.nameTurtlePlayer(tp, owned);
+        String after = tp.bR;
+
+        dan200.turtle.shared.TileEntityTurtle ownerless = new dan200.turtle.shared.TileEntityTurtle();
+        qx tp2 = new dan200.turtle.shared.TurtlePlayer(w);
+        TLiteTurtle.nameTurtlePlayer(tp2, ownerless);
+
+        sender.sendMessage(TAG + "turtleplace: owned " + before + " -> " + after + "; ownerless=" + tp2.bR
+                + "  (expect ComputerCraft -> Owner; ComputerCraft)");
+    }
+
     private void place(CommandSender sender) throws Exception {
         yc w = world();
         org.bukkit.World bw = getServer().getWorlds().get(0);

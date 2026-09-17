@@ -98,6 +98,7 @@ public class PatchCC {
             expected.put("tryPlaceOnBlock", 1);
             expected.put("tryPlaceOnEntity", 1);
             expected.put("transferStateFrom", 1);
+            expected.put("turtleplayer", 1);
             expected.put("nbt", 2);
             expected.put("placed", 1);
             expected.put("adopt", 1);
@@ -161,6 +162,26 @@ public class PatchCC {
                 call.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "allowCell", "(L" + TILE + ";III)Z", false));
                 guardFalse(m, call, 4);
                 hit("tryPlaceOnEntity");
+            }
+            if (m.name.equals("createTurtlePlayer") && m.desc.equals("(Lyc;IIII)Ldan200/turtle/shared/TurtlePlayer;")) {
+                for (AbstractInsnNode i : m.instructions.toArray()) {
+                    if (i.getOpcode() != Opcodes.INVOKESPECIAL) continue;
+                    MethodInsnNode ci = (MethodInsnNode) i;
+                    if (!ci.owner.equals("dan200/turtle/shared/TurtlePlayer") || !ci.name.equals("<init>")) continue;
+                    AbstractInsnNode store = ci.getNext();
+                    while (store != null && (store.getType() == AbstractInsnNode.LABEL || store.getType() == AbstractInsnNode.LINE
+                            || store.getType() == AbstractInsnNode.FRAME)) store = store.getNext();
+                    if (store == null || store.getOpcode() != Opcodes.ASTORE) continue;
+                    int tpLocal = ((VarInsnNode) store).var;
+                    InsnList call = new InsnList();
+                    call.add(new VarInsnNode(Opcodes.ALOAD, tpLocal));
+                    call.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    call.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HELPER, "nameTurtlePlayer", "(Lqx;L" + TILE + ";)V", false));
+                    m.instructions.insert(store, call);
+                    m.maxStack = Math.max(m.maxStack, 2);
+                    hit("turtleplayer");
+                    break;
+                }
             }
             if (m.name.equals("transferStateFrom") && m.desc.equals("(L" + TILE + ";)V")) {
                 InsnList call = new InsnList();
