@@ -3,6 +3,9 @@ import java.util.WeakHashMap;
 
 import org.bukkit.craftbukkit.v1_4_R1.entity.CraftFakePlayer;
 
+import com.eloraam.redpower.core.FrameLib;
+import com.eloraam.redpower.core.WorldCoord;
+
 /**
  * Claim guards injected by TekkitLite-1.4.7-fixes into RedPower 2 machines (coremod).
  *
@@ -12,6 +15,12 @@ import org.bukkit.craftbukkit.v1_4_R1.entity.CraftFakePlayer;
  * (saved to its NBT) and is checked as that owner: the owner's machine works in the owner's
  * claim and is refused in others'. A machine placed before this patch has no owner and is
  * checked as "[RedPower]", a name no claim trusts, so it works only on open ground.
+ *
+ * The Frame Motor is the same story on a larger scale: it relocates a whole frame structure by
+ * writing blocks and tile entities straight to the world, so a motor outside a claim can shove a
+ * moving frame across the border. The motor is owner-tracked the same way, and before a move
+ * starts, every block it would move and every destination it would write is checked as the owner;
+ * if any is protected the whole move is refused (RedPower's own abort path, so nothing is touched).
  *
  * yc = World, qx = EntityPlayer, md = EntityLiving, any = TileEntity, bq = NBTTagCompound;
  * yc.e = setBlockWithNotify, qx.bR = username, bq.a = setString, bq.b = hasKey, bq.i = getString.
@@ -64,6 +73,58 @@ public class TLiteRPMachine {
     /** Guards the top of TileDeployBase.tryUseItemStack (the block in front). */
     public static boolean deployAllowed(any tile, yc world, int x, int y, int z) {
         return allowed(tile, world, x, y, z, "Deployer");
+    }
+
+    /**
+     * Called in TileMotor.pickFrame just before FrameSolver.addMoved (which itself starts writing
+     * to the world). Returns true only if the motor's owner may edit every block the solved frame
+     * would move and every destination it would write. A false return makes pickFrame abort, so no
+     * block is touched. Server side only; on the client it defers to the server (true).
+     */
+    public static boolean frameAllowed(any motor, FrameLib.FrameSolver fs, int moveDir) {
+        yc world = motor == null ? null : motor.k;
+        if (world == null || world.I) {
+            return true;
+        }
+        try {
+            String owner = (String) owners.get(motor);
+            qx player = CraftFakePlayer.get(world, owner == null ? NO_OWNER : owner, false);
+            for (Object o : fs.getFrameSet()) {
+                WorldCoord wc = (WorldCoord) o;
+                if (!TLiteProtect.canEdit(player, world, wc.x, wc.y, wc.z)) {
+                    TLiteProtect.refused(player, "Frame motor at " + wc.x + "," + wc.y + "," + wc.z + " (protected)");
+                    return false;
+                }
+                WorldCoord d = wc.coordStep(moveDir);
+                if (!TLiteProtect.canEdit(player, world, d.x, d.y, d.z)) {
+                    TLiteProtect.refused(player, "Frame motor into " + d.x + "," + d.y + "," + d.z + " (protected)");
+                    return false;
+                }
+            }
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Generic guarded setBlockWithNotify for an automated tile (Thermopile lava/fire consume, Grate
+     * drain). Checks the tile's owner (or [RedPower] when none, so it works only on open ground and,
+     * for an owner-tracked tile, in that owner's claim). Refused edits are simply skipped.
+     */
+    public static boolean tileSet(yc world, int x, int y, int z, int id, any tile) {
+        if (allowed(tile, world, x, y, z, "RedPower")) {
+            return world.e(x, y, z, id);
+        }
+        return false;
+    }
+
+    /** Generic guarded setBlockAndMetadataWithNotify (Thermopile water -> obsidian/stone). */
+    public static boolean tileSetMeta(yc world, int x, int y, int z, int id, int meta, any tile) {
+        if (allowed(tile, world, x, y, z, "RedPower")) {
+            return world.d(x, y, z, id, meta);
+        }
+        return false;
     }
 
     private static boolean allowed(any tile, yc world, int x, int y, int z, String what) {

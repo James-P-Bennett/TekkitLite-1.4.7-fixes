@@ -104,7 +104,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn|iddump|dynamite|scmod>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn|iddump|dynamite|scmod|cartmine|frame|rpguard>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -147,6 +147,9 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("iddump")) iddump(sender);
             else if (s.equals("dynamite")) dynamite(sender);
             else if (s.equals("scmod")) scmod(sender);
+            else if (s.equals("cartmine")) cartmine(sender);
+            else if (s.equals("frame")) frame(sender);
+            else if (s.equals("rpguard")) rpguard(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -1265,6 +1268,134 @@ public class TLFixTest extends JavaPlugin {
 
         sender.sendMessage(TAG + "dynamite: claimed " + (cBefore - cAfter) + "/" + cBefore + " destroyed, open "
                 + (oBefore - oAfter) + "/" + oBefore + " destroyed  (fixed: claimed 0, open some; stock: both)");
+    }
+
+    /**
+     * Drives the deployed Steve's Carts owner-tracking guard (TLiteSC.breakIfAllowed) against a
+     * real claim: a cart owned by an intruder is refused inside another player's claim, the claim
+     * owner's own cart is allowed there, and any cart is allowed on open ground.
+     */
+    private void cartmine(CommandSender sender) throws Exception {
+        yc w = world();
+        org.bukkit.World bw = getServer().getWorlds().get(0);
+        Location spawn = bw.getSpawnLocation();
+        int cx = spawn.getBlockX(), cz = spawn.getBlockZ(), y = 40;
+        Location at = new Location(bw, cx, y, cz);
+        if (GriefPrevention.instance.dataStore.getClaimAt(at, true, null) == null) {
+            GriefPrevention.instance.dataStore.createClaim(bw, cx - 8, cx + 8, 0, 255, cz - 8, cz + 8, "Owner", null, null);
+        }
+        String a = cartCase(w, cx, y, cz, "Intruder");
+        String b = cartCase(w, cx + 1, y, cz, "Owner");
+        String c = cartCase(w, cx + 40, y, cz, "Intruder");
+        sender.sendMessage(TAG + "cartmine: intruder-in-claim=" + a + ", owner-in-claim=" + b + ", intruder-open=" + c
+                + "  (expect refused/stone, mined/air, mined/air)");
+    }
+
+    /** Places a stone at x,y,z, tries to mine it via a cart owned by `owner`, returns the outcome. */
+    private String cartCase(yc w, int x, int y, int z, String owner) {
+        try {
+            getServer().getWorlds().get(0).loadChunk(x >> 4, z >> 4);
+            w.e(x, y, z, 1);
+            vswe.stevescarts.Carts.entMCBase cart = new vswe.stevescarts.Carts.entMCBase(w);
+            bq nbt = new bq();
+            nbt.a("tliteOwner", owner);
+            TLiteSC.loadOwner(cart, nbt);
+            boolean broke = TLiteSC.breakIfAllowed(w, x, y, z, 0, cart);
+            boolean air = (w.a(x, y, z) == 0);
+            w.e(x, y, z, 0);
+            return (broke ? "mined" : "refused") + "/" + (air ? "air" : "stone");
+        } catch (Throwable t) {
+            return "ERR:" + t;
+        }
+    }
+
+    /**
+     * Drives the RedPower frame-motor guard (TLiteRPMachine.frameAllowed) against a real claim:
+     * a solved frame over a block is refused when the motor's owner is an intruder inside another
+     * player's claim, allowed for the claim owner, and allowed for anyone on open ground.
+     */
+    private void frame(CommandSender sender) throws Exception {
+        yc w = world();
+        org.bukkit.World bw = getServer().getWorlds().get(0);
+        Location spawn = bw.getSpawnLocation();
+        int cx = spawn.getBlockX(), cz = spawn.getBlockZ(), y = 40;
+        Location at = new Location(bw, cx, y, cz);
+        if (GriefPrevention.instance.dataStore.getClaimAt(at, true, null) == null) {
+            GriefPrevention.instance.dataStore.createClaim(bw, cx - 8, cx + 8, 0, 255, cz - 8, cz + 8, "Owner", null, null);
+        }
+        String inClaim = frameCase(w, cx, y, cz, "Intruder");
+        String ownerIn = frameCase(w, cx + 1, y, cz, "Owner");
+        String open = frameCase(w, cx + 40, y, cz, "Intruder");
+        sender.sendMessage(TAG + "frame: intruder-in-claim=" + inClaim + ", owner-in-claim=" + ownerIn
+                + ", intruder-open=" + open + "  (expect refused, allowed, allowed)");
+    }
+
+    /**
+     * Drives the generic RedPower tile guard (TLiteRPMachine.tileSet) used by the Thermopile and
+     * Grate: an ownerless tile (Thermopile) is refused inside any claim; an owner-tracked tile
+     * (Grate) is refused for an intruder and allowed for the claim owner; all are allowed on open
+     * ground.
+     */
+    private void rpguard(CommandSender sender) throws Exception {
+        yc w = world();
+        org.bukkit.World bw = getServer().getWorlds().get(0);
+        Location spawn = bw.getSpawnLocation();
+        int cx = spawn.getBlockX(), cz = spawn.getBlockZ(), y = 40;
+        Location at = new Location(bw, cx, y, cz);
+        if (GriefPrevention.instance.dataStore.getClaimAt(at, true, null) == null) {
+            GriefPrevention.instance.dataStore.createClaim(bw, cx - 8, cx + 8, 0, 255, cz - 8, cz + 8, "Owner", null, null);
+        }
+        String noOwner = rpCase(w, cx, y, cz, null);
+        String ownerIn = rpCase(w, cx + 1, y, cz, "Owner");
+        String intruder = rpCase(w, cx + 2, y, cz, "Intruder");
+        String open = rpCase(w, cx + 40, y, cz, null);
+        sender.sendMessage(TAG + "rpguard: no-owner-in-claim=" + noOwner + ", owner-in-claim=" + ownerIn
+                + ", intruder-in-claim=" + intruder + ", no-owner-open=" + open
+                + "  (expect refused, edited, refused, edited)");
+    }
+
+    private String rpCase(yc w, int x, int y, int z, String owner) {
+        try {
+            getServer().getWorlds().get(0).loadChunk(x >> 4, z >> 4);
+            w.e(x, y, z, 1);
+            any tile = new com.eloraam.redpower.machine.TileThermopile();
+            tile.k = w;
+            if (owner != null) {
+                bq nbt = new bq();
+                nbt.a("tliteOwner", owner);
+                TLiteRPMachine.loadOwner(tile, nbt);
+            }
+            boolean edited = TLiteRPMachine.tileSet(w, x, y, z, 0, tile);
+            boolean air = (w.a(x, y, z) == 0);
+            w.e(x, y, z, 0);
+            return (edited ? "edited" : "refused") + "/" + (air ? "air" : "stone");
+        } catch (Throwable t) {
+            return "ERR:" + t;
+        }
+    }
+
+    /** Solves a one-block frame at x,y,z and asks the motor guard whether owner `owner` may move it. */
+    private String frameCase(yc w, int x, int y, int z, String owner) {
+        try {
+            getServer().getWorlds().get(0).loadChunk(x >> 4, z >> 4);
+            w.e(x, y, z, 1);                                              // a block for the frame to carry
+            com.eloraam.redpower.core.WorldCoord wc = new com.eloraam.redpower.core.WorldCoord(x, y, z);
+            com.eloraam.redpower.core.WorldCoord mp = new com.eloraam.redpower.core.WorldCoord(x, y - 2, z);
+            com.eloraam.redpower.core.FrameLib.FrameSolver fs =
+                    new com.eloraam.redpower.core.FrameLib.FrameSolver(w, wc, mp, -1);
+            fs.solve();
+            int n = fs.getFrameSet().size();
+            com.eloraam.redpower.machine.TileMotor motor = new com.eloraam.redpower.machine.TileMotor();
+            motor.k = w;
+            bq nbt = new bq();
+            nbt.a("tliteOwner", owner);
+            TLiteRPMachine.loadOwner(motor, nbt);
+            boolean allowed = TLiteRPMachine.frameAllowed(motor, fs, 1);
+            w.e(x, y, z, 0);
+            return (allowed ? "allowed" : "refused") + "(set=" + n + ")";
+        } catch (Throwable t) {
+            return "ERR:" + t;
+        }
     }
 
     /** Resolves Steve's Carts module id 31 (banned as 31997:31) to its name and worker class. */

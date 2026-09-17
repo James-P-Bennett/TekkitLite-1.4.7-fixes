@@ -18,7 +18,7 @@ Each patch is selectable individually.
 | [BuildCraft 3.4.3](#buildcraft-343) | `quarry` · `filler` · `quarrychunks` |
 | [ComputerCraft 1.5](#computercraft-15) | `turtle` · `packets` · `http` |
 | [immibis-core 52.4.6](#immibis-core-5246-tubestuff) (Tubestuff) | `mergenbt` |
-| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `explosion` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` · `netevent` · `sorter` · `tesla` |
+| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `explosion` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` · `frame` · `thermopile` · `grate` · `netevent` · `sorter` · `tesla` |
 | [ThermalExpansion 2.2.2.2](#thermalexpansion-2222) | `packets` |
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
 | [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` · `requestclamp` · `security` |
@@ -657,6 +657,58 @@ stray fire is left alone. All are patched at load by the coremod (the RedPower j
 </details>
 
 <details>
+<summary><b><code>frame</code>: RedPower frame motors move blocks through claims (protection)</b></summary>
+
+**The bug.** A Frame Motor relocates a whole frame structure by writing the moved blocks and their
+tile entities straight to the world (`TileMotor.pickFrame` / `dropFrame`), with no Bukkit event and
+no permission check, and the motor records no owner. A motor sitting outside a claim can shove a
+moving frame across the border, overwriting or displacing the claimed blocks in its path, and
+GriefPrevention never hears about it. This is the automation-grief the RedPower computer ban was
+partly about, and the only frame edit the `breaker`/`deployer` patches did not already cover.
+
+**The patch.** The motor is owner-tracked like the other RedPower machines (placer saved to NBT).
+In `pickFrame`, before `FrameSolver.addMoved` (which is the first thing to write to the world),
+`TLiteRPMachine.frameAllowed` checks every block the solved frame would move and every destination
+it would write, as the motor's owner. If any is protected the whole move is refused there and then,
+using the motor's own abort path, so nothing is touched. A motor with no owner is checked as
+`[RedPower]`, so it moves frames only on open ground. Server side only; the client defers to the
+server.
+
+**Verified** on the test server (`tlfix frame`): a solved frame carrying a block was **refused** for
+an intruder's motor inside another player's claim, **allowed** for the claim owner's own motor
+there, and **allowed** for any motor on open ground; the coremod's build check patches `TileMotor`
+at all four sites (placement, NBT read, NBT write, and the pickFrame guard).
+
+</details>
+
+<details>
+<summary><b><code>thermopile</code>, <code>grate</code>: RedPower environmental blocks edit claims (protection)</b></summary>
+
+**The bug.** Two more RedPower tiles edit the world directly with no event or permission check. The
+**Thermopile** (`TileThermopile.updateTemps`) consumes adjacent water (to obsidian/stone), lava (to
+cobble/air) and fire, so one placed next to a claim slowly eats the liquids and fire inside it. The
+**Grate** (`TileGrate$GratePathfinder`) drains fluids by flood-filling and setting blocks to air,
+which can drain a claim's fluids from outside.
+
+**The patch.** Both route their edits through the shared `TLiteRPMachine` guard. The Grate has an
+`onBlockPlaced`, so it is owner-tracked like the machines and works in its owner's claim. The
+Thermopile has no placer hook (it is not a `TileMachine`), so it is treated as ownerless: its
+block-eating is refused inside any claim and allowed only on open ground. It still generates power
+from the temperature difference either way, since that does not depend on consuming the blocks.
+
+**Verified** on the test server (`tlfix rpguard`): the shared guard refused an ownerless tile's edit
+inside a claim, refused an intruder-owned tile's, allowed the claim owner's own, and allowed all on
+open ground; the build check patches `TileThermopile`, `TileGrate` and `TileGrate$GratePathfinder`.
+
+Two related things were checked and found already safe: RedPower **microblock/cover placement** goes
+through `world.setBlock(...,entity)`, which fires the Bukkit `BlockPlaceEvent` GriefPrevention
+filters, so covers cannot be placed in others' claims; and the other **GUI event handlers** set
+scalar config (colour, mode, priority) that is used as a value or a bitmask, not an array index, so
+they have no out-of-bounds like the one the `sorter` patch fixed.
+
+</details>
+
+<details>
 <summary><b><code>netevent</code>: cycle any energy storage block's redstone mode or claim an Energy-O-Mat from anywhere</b></summary>
 
 **The bug.** `NetworkManager.onPacketData` (packet 3) looked up the target tile across every
@@ -979,15 +1031,16 @@ uses their real build permission: their own claim is fine, someone else's is ref
 <details>
 <summary><b><code>dynamite</code>: dynamite blasts blocks inside claims (protection)</b></summary>
 
-**The bug.** Dynamite (and the cannon) explode through the mod's own `AdvancedExplosion`, which
-removes blocks with `world.setBlockWithNotify` instead of a vanilla explosion, so it never fires
-the Bukkit `EntityExplodeEvent` that GriefPrevention filters. A thrown stick of dynamite blew up
-blocks inside another player's claim, and block damage is on by default. (The cannon is banned,
-but dynamite is craftable.)
+**The bug.** Dynamite, the Cannon and the Warhammer all explode through the mod's own
+`AdvancedExplosion`, which removes blocks with `world.setBlockWithNotify` instead of a vanilla
+explosion, so it never fires the Bukkit `EntityExplodeEvent` that GriefPrevention filters. A thrown
+stick of dynamite blew up blocks inside another player's claim, and block damage is on by default.
 
 **The patch.** Each block the explosion would remove goes through `TLiteWM.breakIfAllowed`, which
 checks it against the player who threw the dynamite, the same as a hand break. Dynamite with no
-player behind it is treated as untrusted and breaks nothing in a claim.
+player behind it is treated as untrusted and breaks nothing in a claim. The Cannon (`EntityCannonBall`)
+and the Warhammer share this one `doBlockExplosion`, so they are covered by the same patch; the
+Warhammer's own explosion only damages entities and edits no blocks. None of the three is banned.
 
 **Verified** on the test server: the removal is routed through the guard and the mod loads.
 

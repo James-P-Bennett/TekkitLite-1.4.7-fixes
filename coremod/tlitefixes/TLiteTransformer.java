@@ -57,6 +57,11 @@ public class TLiteTransformer implements IClassTransformer {
     static final String IGNITER = "com/eloraam/redpower/machine/TileIgniter";
     static final String TILEMACHINE = "com/eloraam/redpower/machine/TileMachine";
     static final String DEPLOYER = "com/eloraam/redpower/machine/TileDeployBase";
+    static final String MOTOR = "com/eloraam/redpower/machine/TileMotor";
+    static final String FRAMESOLVER = "com/eloraam/redpower/core/FrameLib$FrameSolver";
+    static final String THERMO = "com/eloraam/redpower/machine/TileThermopile";
+    static final String GRATE = "com/eloraam/redpower/machine/TileGrate";
+    static final String GRATE_PF = "com/eloraam/redpower/machine/TileGrate$GratePathfinder";
     static final String NETMGR = "ic2/core/network/NetworkManager";
     static final String NETLISTENER = "ic2/api/network/INetworkClientTileEntityEventListener";
     static final String SORTER = "com/eloraam/redpower/machine/ContainerSorter";
@@ -70,7 +75,8 @@ public class TLiteTransformer implements IClassTransformer {
         if (!internal.equals(LASER) && !internal.equals(EXPLOSION) && !internal.equals(POINTEXP) && !internal.equals(BAG)
                 && !internal.equals(COREPROXY) && !internal.equals(BREAKER) && !internal.equals(IGNITER)
                 && !internal.equals(TILEMACHINE) && !internal.equals(DEPLOYER) && !internal.equals(NETMGR)
-                && !internal.equals(SORTER) && !internal.equals(TESLA)) {
+                && !internal.equals(SORTER) && !internal.equals(TESLA) && !internal.equals(MOTOR)
+                && !internal.equals(THERMO) && !internal.equals(GRATE) && !internal.equals(GRATE_PF)) {
             return bytes;
         }
         try {
@@ -102,6 +108,10 @@ public class TLiteTransformer implements IClassTransformer {
         else if (internal.equals(NETMGR)) ok = patchNetworkManager(cn);
         else if (internal.equals(SORTER)) ok = patchSorter(cn);
         else if (internal.equals(TESLA)) ok = patchTesla(cn);
+        else if (internal.equals(MOTOR)) ok = patchMotor(cn);
+        else if (internal.equals(THERMO)) ok = patchThermopile(cn);
+        else if (internal.equals(GRATE)) ok = patchGrate(cn);
+        else if (internal.equals(GRATE_PF)) ok = patchGratePF(cn);
         else ok = patchBag(cn);
         if (!ok) {
             return null;
@@ -431,6 +441,141 @@ public class TLiteTransformer implements IClassTransformer {
         return placed == 1 && read == 1 && write == 1;
     }
 
+    /**
+     * TileMotor: owner-track it exactly like a TileMachine (onBlockPlaced records the placer, NBT
+     * a/b load and save the owner), and gate pickFrame. In pickFrame, before FrameSolver.addMoved
+     * (which starts writing blocks), insert `if (!TLiteRPMachine.frameAllowed(this, fs, this.MoveDir))
+     * return;` so a move that would touch a block the owner cannot edit is refused before anything
+     * happens. fs is the local loaded as the receiver of the addMoved call.
+     */
+    static boolean patchMotor(ClassNode cn) {
+        int placed = 0, read = 0, write = 0, guard = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (m.name.equals("onBlockPlaced") && m.desc.equals("(Lur;ILmd;)V")) {
+                InsnList c = new InsnList();
+                c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                c.add(new VarInsnNode(Opcodes.ALOAD, 3));
+                c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", "recordOwner", "(Lany;Lmd;)V"));
+                beforeReturns(m, c);
+                m.maxStack = Math.max(m.maxStack, 2);
+                placed++;
+            } else if (m.name.equals("a") && m.desc.equals("(Lbq;)V")) {
+                beforeReturns(m, nbtCall("loadOwner"));
+                m.maxStack = Math.max(m.maxStack, 2);
+                read++;
+            } else if (m.name.equals("b") && m.desc.equals("(Lbq;)V")) {
+                beforeReturns(m, nbtCall("saveOwner"));
+                m.maxStack = Math.max(m.maxStack, 2);
+                write++;
+            } else if (m.name.equals("pickFrame")) {
+                for (AbstractInsnNode i : m.instructions.toArray()) {
+                    if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
+                    MethodInsnNode mi = (MethodInsnNode) i;
+                    if (!mi.owner.equals(FRAMESOLVER) || !mi.name.equals("addMoved") || !mi.desc.equals("()Z")) continue;
+                    AbstractInsnNode recv = mi.getPrevious();
+                    while (recv != null && (recv.getType() == AbstractInsnNode.LABEL || recv.getType() == AbstractInsnNode.LINE
+                            || recv.getType() == AbstractInsnNode.FRAME)) recv = recv.getPrevious();
+                    if (recv == null || recv.getOpcode() != Opcodes.ALOAD) continue;
+                    int fsVar = ((VarInsnNode) recv).var;
+                    InsnList c = new InsnList();
+                    LabelNode proceed = new LabelNode();
+                    c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    c.add(new VarInsnNode(Opcodes.ALOAD, fsVar));
+                    c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    c.add(new FieldInsnNode(Opcodes.GETFIELD, MOTOR, "MoveDir", "I"));
+                    c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", "frameAllowed",
+                            "(Lany;L" + FRAMESOLVER + ";I)Z"));
+                    c.add(new JumpInsnNode(Opcodes.IFNE, proceed));
+                    c.add(new InsnNode(Opcodes.RETURN));
+                    c.add(proceed);
+                    m.instructions.insertBefore(recv, c);
+                    m.maxStack = Math.max(m.maxStack, 4);
+                    guard++;
+                }
+            }
+        }
+        return placed == 1 && read == 1 && write == 1 && guard == 1;
+    }
+
+    /**
+     * TileThermopile.updateTemps consumes adjacent water, lava and fire straight through the world.
+     * It has no placer to record (it is not a TileMachine), so the three edits are routed through
+     * the generic guard as an ownerless tile: refused inside any claim (the thermopile still makes
+     * power from the temperature difference; only the block-eating stops), allowed on open ground.
+     */
+    static boolean patchThermopile(ClassNode cn) {
+        int hits = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (!m.name.equals("updateTemps")) continue;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
+                MethodInsnNode mi = (MethodInsnNode) i;
+                if (!mi.owner.equals("yc")) continue;
+                String target, desc;
+                if (mi.name.equals("e") && mi.desc.equals("(IIII)Z")) { target = "tileSet"; desc = "(Lyc;IIIILany;)Z"; }
+                else if (mi.name.equals("d") && mi.desc.equals("(IIIII)Z")) { target = "tileSetMeta"; desc = "(Lyc;IIIIILany;)Z"; }
+                else continue;
+                m.instructions.insertBefore(mi, new VarInsnNode(Opcodes.ALOAD, 0));
+                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", target, desc));
+                m.maxStack += 1;
+                hits++;
+            }
+        }
+        return hits == 3;
+    }
+
+    /** TileGrate: owner-track it (records the placer, saves it in NBT) so its drain honors claims. */
+    static boolean patchGrate(ClassNode cn) {
+        int placed = 0, read = 0, write = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            if (m.name.equals("onBlockPlaced") && m.desc.equals("(Lur;ILmd;)V")) {
+                InsnList c = new InsnList();
+                c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                c.add(new VarInsnNode(Opcodes.ALOAD, 3));
+                c.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", "recordOwner", "(Lany;Lmd;)V"));
+                beforeReturns(m, c);
+                m.maxStack = Math.max(m.maxStack, 2);
+                placed++;
+            } else if (m.name.equals("a") && m.desc.equals("(Lbq;)V")) {
+                beforeReturns(m, nbtCall("loadOwner"));
+                m.maxStack = Math.max(m.maxStack, 2);
+                read++;
+            } else if (m.name.equals("b") && m.desc.equals("(Lbq;)V")) {
+                beforeReturns(m, nbtCall("saveOwner"));
+                m.maxStack = Math.max(m.maxStack, 2);
+                write++;
+            }
+        }
+        return placed == 1 && read == 1 && write == 1;
+    }
+
+    /**
+     * TileGrate$GratePathfinder drains fluids by setting blocks to air. Route that through the guard
+     * as the outer grate's owner (reached via the inner class's this$0 field).
+     */
+    static boolean patchGratePF(ClassNode cn) {
+        int hits = 0;
+        for (Object mo : cn.methods) {
+            MethodNode m = (MethodNode) mo;
+            for (AbstractInsnNode i : m.instructions.toArray()) {
+                if (i.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
+                MethodInsnNode mi = (MethodInsnNode) i;
+                if (!mi.owner.equals("yc") || !mi.name.equals("e") || !mi.desc.equals("(IIII)Z")) continue;
+                InsnList c = new InsnList();
+                c.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                c.add(new FieldInsnNode(Opcodes.GETFIELD, GRATE_PF, "this$0", "L" + GRATE + ";"));
+                m.instructions.insertBefore(mi, c);
+                m.instructions.set(mi, new MethodInsnNode(Opcodes.INVOKESTATIC, "TLiteRPMachine", "tileSet", "(Lyc;IIIILany;)Z"));
+                m.maxStack += 1;
+                hits++;
+            }
+        }
+        return hits == 1;
+    }
+
     static InsnList nbtCall(String name) {
         InsnList c = new InsnList();
         c.add(new VarInsnNode(Opcodes.ALOAD, 0));
@@ -530,7 +675,7 @@ public class TLiteTransformer implements IClassTransformer {
             System.err.println("usage: TLiteTransformer <ic2.jar> <RedPowerCore.zip> <RedPowerMechanical.zip>");
             System.exit(2);
         }
-        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[0], POINTEXP }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER }, { args[0], NETMGR }, { args[2], SORTER }, { args[0], TESLA } };
+        String[][] checks = { { args[0], LASER }, { args[0], EXPLOSION }, { args[0], POINTEXP }, { args[1], BAG }, { args[1], COREPROXY }, { args[2], BREAKER }, { args[2], IGNITER }, { args[2], TILEMACHINE }, { args[2], DEPLOYER }, { args[0], NETMGR }, { args[2], SORTER }, { args[0], TESLA }, { args[2], MOTOR }, { args[2], THERMO }, { args[2], GRATE }, { args[2], GRATE_PF } };
         boolean failed = false;
         for (String[] check : checks) {
             ZipFile zf = new ZipFile(check[0]);
