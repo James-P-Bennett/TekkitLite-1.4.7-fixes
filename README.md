@@ -1202,15 +1202,6 @@ dimension id crashed the link server-side.
 
 ---
 
-## Not fixed yet
-
-| What | Status |
-|---|---|
-| Tampered on-disk NBT crashing one chunk/tile load (Factorization slots, ACT Mk II recipe, immibis chunk loader shape, Mystcraft legacy biome) | Only reachable if the region file is already edited or corrupt, not by a player in game. Left as defensive hardening, not applied. |
-| Nuke kept banned | Server policy, not a bug. The Nuke is now crash-fixed and claim-safe (see `explosion`) but left banned by choice. (Chunk loaders are a finished feature, not an open item: single-chunk spot loaders under one shared per-player ChickenChunks cap across the anchor and Teleport Tether. The Industrial and Howler alarms were unbanned, their remote-spam vector fixed by `packets`.) |
-
----
-
 ## Plugins
 
 Two Bukkit plugins used to cover these bugs. The patches replace what they did:
