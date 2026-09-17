@@ -1204,11 +1204,6 @@ dimension id crashed the link server-side.
 
 ## Dimensional Doors 1.3.2
 
-Not installed on the server. It ships in the client pack (which is why the Rift Blade shows in
-NEI), but no server jar was present, so on the server the rift items do nothing. This is an
-optional, patched build for anyone who wants Dimensional Doors working on the server without the
-grief, kept out of the deployed zip and taken from the repo instead.
-
 <details>
 <summary><b><code>rifts</code>: rift and door items respect claims (protection)</b></summary>
 
