@@ -217,6 +217,84 @@ public class TLiteIC2 {
         }
     }
 
+    /**
+     * Replaces the world.setBlock in a right-click IC2 tool (Wrench dismantle, Electric Hoe till,
+     * Foam Sprayer) with the real player available, so the edit is checked against that player the
+     * same as a hand break. A refused edit is skipped. The Wrench in particular removes a machine
+     * to item, which without this let a player dismantle and pocket machines inside another's claim.
+     */
+    public static boolean wrenchEdit(yc world, int x, int y, int z, int id, qx player) {
+        if (player == null || world == null) {
+            return false;
+        }
+        if (TLiteProtect.canEdit(player, world, x, y, z)) {
+            return world.e(x, y, z, id);
+        }
+        TLiteProtect.refused(player, "IC2 tool at " + x + "," + y + "," + z + " (protected)");
+        return false;
+    }
+
+    // ------------------------------------------------------------ automated IC2 machines (Miner, Pump, Terraformer)
+
+    private static final java.util.Map machineOwners = new java.util.WeakHashMap();   // any -> String
+    private static final String MACHINE_NOOWNER = "[IC2]";
+    private static final String MACHINE_TAG = "tliteOwner";
+
+    /** Appended to BlockMultiID.onBlockPlacedBy: record the placer of an IC2 machine by its tile. */
+    public static void recordMachineOwner(yc world, int x, int y, int z, md placer) {
+        try {
+            if (!(placer instanceof qx) || world == null) return;
+            any tile = world.q(x, y, z);
+            if (tile != null) machineOwners.put(tile, ((qx) placer).bR);
+        } catch (Throwable t) {
+        }
+    }
+
+    /** Appended to TileEntityElecMachine.readFromNBT. */
+    public static void loadMachineOwner(any tile, bq nbt) {
+        try {
+            if (nbt.b(MACHINE_TAG)) machineOwners.put(tile, nbt.i(MACHINE_TAG));
+        } catch (Throwable t) {
+        }
+    }
+
+    /** Appended to TileEntityElecMachine.writeToNBT. */
+    public static void saveMachineOwner(any tile, bq nbt) {
+        try {
+            String owner = (String) machineOwners.get(tile);
+            if (owner != null) nbt.a(MACHINE_TAG, owner);
+        } catch (Throwable t) {
+        }
+    }
+
+    /**
+     * Replaces world.setBlockWithNotify in an automated machine (Miner, Pump, Terraformer), checked
+     * against the machine's owner: the owner's machine works in the owner's claim, is refused in
+     * others', and one placed before this patch (no owner) works only on open ground.
+     */
+    public static boolean machineSet(yc world, int x, int y, int z, int id, any tile) {
+        if (machineAllowed(tile, world, x, y, z)) return world.e(x, y, z, id);
+        return false;
+    }
+
+    /** Replaces world.setBlockAndMetadataWithNotify in an automated machine. */
+    public static boolean machineSetMeta(yc world, int x, int y, int z, int id, int meta, any tile) {
+        if (machineAllowed(tile, world, x, y, z)) return world.d(x, y, z, id, meta);
+        return false;
+    }
+
+    private static boolean machineAllowed(any tile, yc world, int x, int y, int z) {
+        if (world == null) return false;
+        try {
+            String owner = (String) machineOwners.get(tile);
+            qx player = CraftFakePlayer.get(world, owner == null ? MACHINE_NOOWNER : owner, false);
+            if (TLiteProtect.canEdit(player, world, x, y, z)) return true;
+            TLiteProtect.refused(player, "IC2 machine at " + x + "," + y + "," + z + " (protected)");
+        } catch (Throwable t) {
+        }
+        return false;
+    }
+
     /** TLiteProtect as the laser's owner. A laser with no player owner is refused. */
     private static boolean allowed(md owner, yc world, int x, int y, int z, String what) {
         if (!(owner instanceof qx) || world == null) {

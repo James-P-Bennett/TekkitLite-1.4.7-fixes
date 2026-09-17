@@ -104,7 +104,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn|iddump|dynamite|scmod|cartmine|frame|rpguard>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn|iddump|dynamite|scmod|cartmine|frame|rpguard|wrench|ic2machine>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -150,6 +150,8 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("cartmine")) cartmine(sender);
             else if (s.equals("frame")) frame(sender);
             else if (s.equals("rpguard")) rpguard(sender);
+            else if (s.equals("wrench")) wrench(sender);
+            else if (s.equals("ic2machine")) ic2machine(sender);
             else sender.sendMessage(TAG + "unknown scenario " + s);
         } catch (Throwable t) {
             sender.sendMessage(TAG + s + " threw " + t);
@@ -1336,6 +1338,82 @@ public class TLFixTest extends JavaPlugin {
      * (Grate) is refused for an intruder and allowed for the claim owner; all are allowed on open
      * ground.
      */
+    /**
+     * Drives the IC2 right-click tool guard (TLiteIC2.wrenchEdit, used by the Wrench and Electric
+     * Hoe) against a claim: an intruder's edit is refused inside another player's claim, the claim
+     * owner's is allowed, and any is allowed on open ground.
+     */
+    /**
+     * Drives the IC2 automated-machine guard (TLiteIC2.machineSet, used by Miner/Pump/Terraformer)
+     * against a claim: an ownerless machine and an intruder-owned one are refused inside another
+     * player's claim, the claim owner's own is allowed, and all are allowed on open ground.
+     */
+    private void ic2machine(CommandSender sender) throws Exception {
+        yc w = world();
+        org.bukkit.World bw = getServer().getWorlds().get(0);
+        Location spawn = bw.getSpawnLocation();
+        int cx = spawn.getBlockX(), cz = spawn.getBlockZ(), y = 40;
+        Location at = new Location(bw, cx, y, cz);
+        if (GriefPrevention.instance.dataStore.getClaimAt(at, true, null) == null) {
+            GriefPrevention.instance.dataStore.createClaim(bw, cx - 8, cx + 8, 0, 255, cz - 8, cz + 8, "Owner", null, null);
+        }
+        String a = machineCase(w, cx, y, cz, null);
+        String b = machineCase(w, cx + 1, y, cz, "Owner");
+        String c = machineCase(w, cx + 2, y, cz, "Intruder");
+        String d = machineCase(w, cx + 40, y, cz, null);
+        sender.sendMessage(TAG + "ic2machine: no-owner-in-claim=" + a + ", owner-in-claim=" + b
+                + ", intruder-in-claim=" + c + ", no-owner-open=" + d + "  (expect refused, edited, refused, edited)");
+    }
+
+    private String machineCase(yc w, int x, int y, int z, String owner) {
+        try {
+            getServer().getWorlds().get(0).loadChunk(x >> 4, z >> 4);
+            w.e(x, y, z, 1);
+            any tile = new ic2.core.block.machine.tileentity.TileEntityMiner();
+            if (owner != null) {
+                bq nbt = new bq();
+                nbt.a("tliteOwner", owner);
+                TLiteIC2.loadMachineOwner(tile, nbt);
+            }
+            boolean edited = TLiteIC2.machineSet(w, x, y, z, 0, tile);
+            boolean air = (w.a(x, y, z) == 0);
+            w.e(x, y, z, 0);
+            return (edited ? "edited" : "refused") + "/" + (air ? "air" : "block");
+        } catch (Throwable t) {
+            return "ERR:" + t;
+        }
+    }
+
+    private void wrench(CommandSender sender) throws Exception {
+        yc w = world();
+        org.bukkit.World bw = getServer().getWorlds().get(0);
+        Location spawn = bw.getSpawnLocation();
+        int cx = spawn.getBlockX(), cz = spawn.getBlockZ(), y = 40;
+        Location at = new Location(bw, cx, y, cz);
+        if (GriefPrevention.instance.dataStore.getClaimAt(at, true, null) == null) {
+            GriefPrevention.instance.dataStore.createClaim(bw, cx - 8, cx + 8, 0, 255, cz - 8, cz + 8, "Owner", null, null);
+        }
+        String a = wrenchCase(w, cx, y, cz, "Intruder");
+        String b = wrenchCase(w, cx + 1, y, cz, "Owner");
+        String c = wrenchCase(w, cx + 40, y, cz, "Intruder");
+        sender.sendMessage(TAG + "wrench: intruder-in-claim=" + a + ", owner-in-claim=" + b + ", intruder-open=" + c
+                + "  (expect refused, dismantled, dismantled)");
+    }
+
+    private String wrenchCase(yc w, int x, int y, int z, String name) {
+        try {
+            getServer().getWorlds().get(0).loadChunk(x >> 4, z >> 4);
+            w.e(x, y, z, 1);
+            iq player = CraftFakePlayer.get(w, name, true);
+            boolean broke = TLiteIC2.wrenchEdit(w, x, y, z, 0, player);
+            boolean air = (w.a(x, y, z) == 0);
+            w.e(x, y, z, 0);
+            return (broke ? "dismantled" : "refused") + "/" + (air ? "air" : "block");
+        } catch (Throwable t) {
+            return "ERR:" + t;
+        }
+    }
+
     private void rpguard(CommandSender sender) throws Exception {
         yc w = world();
         org.bukkit.World bw = getServer().getWorlds().get(0);

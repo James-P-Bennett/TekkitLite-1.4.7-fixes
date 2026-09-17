@@ -18,7 +18,7 @@ Each patch is selectable individually.
 | [BuildCraft 3.4.3](#buildcraft-343) | `quarry` · `filler` · `quarrychunks` |
 | [ComputerCraft 1.5](#computercraft-15) | `turtle` · `packets` · `http` |
 | [immibis-core 52.4.6](#immibis-core-5246-tubestuff) (Tubestuff) | `mergenbt` |
-| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `explosion` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` · `frame` · `thermopile` · `grate` · `netevent` · `sorter` · `tesla` |
+| [IndustrialCraft 2 and RedPower 2](#industrialcraft-2-and-redpower-2-tlitefixes-coremod) (TLiteFixes coremod) | `laser` · `explosion` · `wrench` · `hoe` · `sprayer` · `miner` · `pump` · `terraformer` · `bagdupe` · `tubeinject` · `breaker` · `igniter` · `deployer` · `frame` · `thermopile` · `grate` · `netevent` · `sorter` · `tesla` |
 | [ThermalExpansion 2.2.2.2](#thermalexpansion-2222) | `packets` |
 | [IronChest 5.1.0.275](#ironchest-51025) | `crystalcap` |
 | [LogisticsPipes 0.7.0.96](#logisticspipes-07096) | `diskdupe` · `requestclamp` · `security` |
@@ -605,6 +605,32 @@ destroyed **0 of 6** claimed blocks patched versus **6 of 6** on stock, both cle
 </details>
 
 <details>
+<summary><b><code>wrench</code>, <code>hoe</code>, <code>sprayer</code>, <code>miner</code>, <code>pump</code>, <code>terraformer</code>: IC2 tools and machines edit claims (protection)</b></summary>
+
+**The bug.** A sweep for tools and machines that change blocks with no protection check turned up
+six in IC2 (Applied Energistics, Balkon's ranged weapons and Modular Powersuits were clean). Three
+are right-click tools: the **Wrench** dismantles a machine to item (so a player could pocket
+machines in another's claim), the **Electric Hoe** tills soil, and the **Foam Sprayer** lays foam.
+Three are automated machines that edit the world in their tick with no owner: the **Miner** mines a
+shaft, the **Pump** removes liquids, and the **Terraformer** reshapes terrain over a radius.
+
+**The patch.**
+
+- The Wrench and Hoe route their `world.setBlock` through `TLiteIC2.wrenchEdit`, checked against
+  the acting player (available in the use method), the same as a hand break. The Foam Sprayer, whose
+  edits are deeper where no player is in scope, is guarded at its use method on the clicked block.
+- The Miner, Pump and Terraformer are owner-tracked: `BlockMultiID.onBlockPlacedBy` records the
+  placer of every IC2 machine and `TileEntityElecMachine` saves it in NBT, and each machine's block
+  edits go through `TLiteIC2.machineSet` as that owner. A machine placed before this patch has no
+  owner and works only on open ground.
+
+**Verified** on the test server (`tlfix wrench`, `tlfix ic2machine`): both guards refused an
+intruder's edit inside another player's claim, allowed the claim owner's own, and allowed any on
+open ground; the build check patches all six classes plus the placement hook and NBT.
+
+</details>
+
+<details>
 <summary><b><code>bagdupe</code>: RedPower Canvas Bag number key dupe</b></summary>
 
 **The bug.** The Canvas Bag GUI writes to the held bag's NBT and uses vanilla `slotClick`.
@@ -1177,9 +1203,8 @@ dimension id crashed the link server-side.
 
 | What | Status |
 |---|---|
-| Other IC2 tools: Wrench, Foam Sprayer, Electric Hoe, Treetap, Painter, Cable Cutter, Terraformer | Change blocks with no protection check. GriefPrevention may already stop the right clicks on IC2 blocks. Not checked. |
+| Other IC2 right-click placements: cables, resin, barrels, luminators, painter, treetap | Player-initiated right-click uses, lower risk than the automated machines and tool-theft already fixed. Not individually verified against GriefPrevention's interact handling. |
 | Turtles placing vanilla blocks | MCPC+ asks plugins as the player "ComputerCraft" when a turtle places a vanilla block, so an owner's turtle may be refused in their own claim. Not checked. |
-| IC2 Terraformer changing terrain in claims | A placed Terraformer edits blocks in a radius with no owner; like MFFS it would need owner-tracking that its code does not make available cleanly. Recommend a ban or server-policy decision. |
 | Tampered on-disk NBT crashing one chunk/tile load (Factorization slots, ACT Mk II recipe, immibis chunk loader shape, Mystcraft legacy biome) | Only reachable if the region file is already edited or corrupt, not by a player in game. Left as defensive hardening, not applied. |
 | Balance and lag bans: Nuke, chunk-loader caps | Server policy rather than bugs. The Nuke is now crash-fixed and claim-safe (see `explosion`) but kept banned by choice; chunk-loader caps are enforced by the loader feature. The Industrial and Howler alarms were unbanned (their only real vector, remote packet spam, is fixed by `packets`; placement is annoyance-only and claim-protected). |
 
