@@ -40,38 +40,6 @@ now done inside the mods, so they hold no matter which protection plugin the ser
 
 ---
 
-## How protection checks work
-
-Mods on MCPC+ change blocks straight through the world, so protection plugins such as
-GriefPrevention never hear about it. That is how the Entropy Accelerator, Minium Stone and
-Wrath Igniter worked inside other players' claims.
-
-Every patch marked **protection** below asks the plugins first, the same way a hand break
-does: `TLiteProtect` fires a Bukkit `BlockBreakEvent` for the player at the block, and the mod
-only goes ahead if no plugin cancels it. A claim, a WorldGuard region or anything else that
-stops a player breaking that block now also stops the item.
-
-- The check fails closed. If it throws, the change is refused and one line is logged.
-- Refusals are logged at most once per player every 10 seconds:
-
-```
-[TLiteFixes] refused Entropy Accelerator at 224,200,252 (protected) from Intruder
-```
-
-- Every patched jar carries its own identical copy of `TLiteProtect`. Build them together.
-- Plugins that log `BlockBreakEvent`, such as CoreProtect, may record an allowed change as a
-  break by that player. Not checked.
-
-Machines that work with no player at hand (Quarry, Filler, Turtles) remember who placed them and
-ask as that player, through an offline MCPC+ fake player with the owner's name. The Mining Laser
-asks the same way for its shooter. The fake player has no connection, so GriefPrevention's
-refusal messages go nowhere instead of spamming the owner. A machine placed before these patches
-has no owner and asks under a name no claim trusts, so it keeps working on open ground and is
-refused inside every claim. Right clicking an ownerless Filler or Turtle with permission to break
-it makes that player its owner.
-
----
-
 ## MineFactoryReloaded 2.3.2
 
 <details>
@@ -204,7 +172,7 @@ through the world directly, so claims never see it. The Minium Stone was banned 
 this.
 
 **The patch.** Each block goes through `TLiteEE3.transmuteInWorld`, which asks
-[`TLiteProtect`](#how-protection-checks-work) first.
+`TLiteProtect` first.
 
 **Verified** with a GriefPrevention claim owned by another player. Stock transmuted the block
 inside the claim. Patched left it and logged the refusal, and still transmuted the same block
@@ -223,7 +191,7 @@ on open ground.
 the Vibration Catalyst (smelts blocks in place) change the clicked block through the world in
 `onItemUse`. Claims never see it. Both were banned for this.
 
-**The patch.** `onItemUse` starts with a [`TLiteProtect`](#how-protection-checks-work) check on
+**The patch.** `onItemUse` starts with a `TLiteProtect` check on
 the clicked block and does nothing when it is refused.
 
 **Verified** with charged tools on a block inside another player's claim. Stock: the Entropy
@@ -240,7 +208,7 @@ hands 64 of its displayed item out of the ME network to whoever right clicks it.
 owner check, and anyone can also relock it with a wrench.
 
 **The patch.** `BlockStorageMonitor.onBlockActivated` starts with a
-[`TLiteProtect`](#how-protection-checks-work) check. When it is refused the click is swallowed.
+`TLiteProtect` check. When it is refused the click is swallowed.
 
 **Verified** inside another player's claim. Stock ran the click. Patched refused it and logged
 the refusal.
@@ -258,7 +226,7 @@ the refusal.
 through blocks of that type. `ItemWrathIgniter.tryPlaceIntoWorld` does it through the world
 with no check. It was banned as able to "cook the world".
 
-**The patch.** `tryPlaceIntoWorld` starts with a [`TLiteProtect`](#how-protection-checks-work)
+**The patch.** `tryPlaceIntoWorld` starts with a `TLiteProtect`
 check on the clicked block and does nothing when it is refused.
 
 **Verified** inside another player's claim. Stock lit wrath fire above the block. Patched did
@@ -281,7 +249,7 @@ a tree on the border, a tree farm, or a log wall. Three leaves next to the broke
 enough for it to count as a tree.
 
 **The patch.** Each block the felling is about to break goes through `TLiteTreeCap.getBlockId`,
-which asks [`TLiteProtect`](#how-protection-checks-work) first and returns air for a refused
+which asks `TLiteProtect` first and returns air for a refused
 block, which the loop skips. After the first refusal the rest of that felling is skipped too, so
 a claim costs one refusal message instead of one per log.
 
@@ -309,7 +277,7 @@ the server stores.
 
 **The patch.** The call goes to `TLiteNEI.handleMobSpawnerID`, which drops the request unless
 the spawner is within 8 blocks, the name is a living mob, and
-[`TLiteProtect`](#how-protection-checks-work) allows the change.
+`TLiteProtect` allows the change.
 
 **Verified** against a pig spawner with Creeper requested. Stock changed it inside another
 player's claim, from 30 blocks away, and to the made up name `NotAMob`. Patched refused all
@@ -347,7 +315,7 @@ area over the claim digs the claim out. It was banned as able to "bypass claim p
 
 - The Quarry remembers who placed it, saved in its NBT.
 - Each block it would mine goes through `TLiteBC.quarriable`, which adds the owner's
-  [protection check](#how-protection-checks-work) to the stock test.
+  protection check to the stock test.
 - A refused block's column is then treated like bedrock, so the Quarry moves on instead of
   returning to it.
 - Frame blocks inside a claim are skipped.
@@ -396,7 +364,7 @@ reach.
 
 **The patch.** The Filler remembers who placed it. Every block a pattern places or clears goes
 through `TLiteBC`, which asks the owner's
-[protection check](#how-protection-checks-work) first. On a refusal the Filler stops as if its
+protection check first. On a refusal the Filler stops as if its
 pattern were done, and rests for 10 seconds before trying again, so Loop mode can't retry every
 tick.
 
@@ -433,7 +401,7 @@ were banned as able to "build in protected areas without permission".
 
 - Each turtle remembers who placed it, saved in its NBT and carried across moves.
 - `move`, `useTool` (dig and attack with any tool upgrade), `place`, `suck` and `dropQuantity`
-  each start with a [protection check](#how-protection-checks-work) as the owner on the cell they
+  each start with a protection check as the owner on the cell they
   touch.
 - `tryPlaceOnBlock` and `tryPlaceOnEntity` check the cell they reach, since placing can reach
   two blocks away.
@@ -520,7 +488,7 @@ as able to "bypass anti-grief".
 **The patch.**
 
 - Before the beam takes a block, `TLiteIC2.canMine` asks the shooter's
-  [protection check](#how-protection-checks-work). A refusal ends the beam, as hitting an
+  protection check. A refusal ends the beam, as hitting an
   unminable block does.
 - In a Mining Laser explosion each block is checked the same way, and a refused one reads as air,
   so it is neither destroyed nor dropped. Explosions from anything else are left as they were.
@@ -681,7 +649,7 @@ A machine placed just outside a claim, facing in, mines, burns or builds into th
 
 **The patch.** Each machine records the player who placed it (saved to its NBT, hooked into
 `TileMachine`), and the break, fire-set and deploy go through a
-[`TLiteProtect`](#how-protection-checks-work) check as that owner: the owner's machine works in
+`TLiteProtect` check as that owner: the owner's machine works in
 the owner's claim and is refused in others'. A machine placed before this patch has no owner and
 is checked as `[RedPower]`, a name no claim trusts, so it works only on open ground. Removing
 stray fire is left alone. All are patched at load by the coremod (the RedPower jars are signed).
@@ -1051,7 +1019,7 @@ drops it) and rotates vanilla blocks straight through the world. Whether GriefPr
 interact handler stops it depends on config, so a player could pop machines out of another
 player's claim.
 
-**The patch.** The click starts with a [`TLiteProtect`](#how-protection-checks-work) check for the
+**The patch.** The click starts with a `TLiteProtect` check for the
 player, the same as a hand break, and does nothing when refused. The player is online, so this
 uses their real build permission: their own claim is fine, someone else's is refused.
 
@@ -1116,7 +1084,7 @@ mines or builds into it.
 
 **The patch.** Each cart records the player who deployed it (saved to its NBT), and every module
 block change (14 sites across the module classes) goes through a
-[`TLiteProtect`](#how-protection-checks-work) check as that owner: the owner's cart works in the
+`TLiteProtect` check as that owner: the owner's cart works in the
 owner's claim and is refused in others'. A cart deployed before this patch, or by something other
 than a player, has no owner and is checked as `[StevesCarts]`, a name no claim trusts, so it works
 only on open ground.
