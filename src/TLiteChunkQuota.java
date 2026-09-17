@@ -111,11 +111,19 @@ public class TLiteChunkQuota {
     // ------------------------------------------------------------ registry core
 
     private static boolean claim(String owner, String world, int x, int y, int z, boolean gateOnline) {
+        return claimKeyed(owner, world + ":" + x + ":" + y + ":" + z, world, x, y, z, gateOnline);
+    }
+
+    /**
+     * Register a loader under an explicit registry key (so a mobile loader can use a stable id
+     * instead of its changing position) and return whether it may load: within the owner's limit
+     * and, when gateOnline, with the owner online or inside the grace window.
+     */
+    private static boolean claimKeyed(String owner, String key, String world, int x, int y, int z, boolean gateOnline) {
         Map<String, Loader> m = reg.get(owner);
         if (m == null) { m = new LinkedHashMap<String, Loader>(); reg.put(owner, m); }
-        String k = world + ":" + x + ":" + y + ":" + z;
-        Loader ld = m.get(k);
-        if (ld == null) { ld = new Loader(world, x, y, z); m.put(k, ld); }
+        Loader ld = m.get(key);
+        if (ld == null) { ld = new Loader(world, x, y, z); m.put(key, ld); }
         boolean withinLimit;
         int lim = limit(owner);
         if (lim <= 0) {
@@ -129,6 +137,26 @@ public class TLiteChunkQuota {
         }
         ld.active = withinLimit && (!gateOnline || ownerOnlineOrGrace(owner));
         return ld.active;
+    }
+
+    // ------------------------------------------------------------ Steve's Carts (mobile cart loaders)
+
+    /**
+     * A Steve's Carts chunk-loader module force-loads chunks through ForgeChunkManager, outside the
+     * quota the block loaders share. It now counts as one chunk against its owner's shared per-player
+     * limit, keyed by a stable per-cart id because the cart is a mobile entity whose position is not
+     * a stable key. Returns whether the cart may load (within the limit and owner online or in grace).
+     */
+    public static synchronized boolean scClaim(String owner, String key, boolean announce) {
+        if (owner == null) return true;
+        boolean active = claimKeyed(owner, key, "cart", 0, 0, 0, true);
+        if (announce) announce(owner, active);
+        return active;
+    }
+
+    public static synchronized void scRelease(String owner, String key) {
+        if (owner == null) return;
+        releaseKeyed(owner, key);
     }
 
     // ------------------------------------------------------------ online / grace
@@ -185,9 +213,13 @@ public class TLiteChunkQuota {
     }
 
     private static void release(String owner, String world, int x, int y, int z) {
+        releaseKeyed(owner, world + ":" + x + ":" + y + ":" + z);
+    }
+
+    private static void releaseKeyed(String owner, String key) {
         Map<String, Loader> m = reg.get(owner);
         if (m == null) return;
-        m.remove(world + ":" + x + ":" + y + ":" + z);
+        m.remove(key);
         if (m.isEmpty()) reg.remove(owner);
     }
 

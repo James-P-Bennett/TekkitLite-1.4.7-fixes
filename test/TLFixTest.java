@@ -104,7 +104,7 @@ public class TLFixTest extends JavaPlugin {
 
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn|iddump|dynamite|scmod|cartmine|frame|rpguard|wrench|ic2machine|place|turtleplace>");
+            sender.sendMessage(TAG + "usage: tlfix <unifier|probe|ee3|entropy|catalyst|wrath|monitor|treecap|spawner|creative|dsu|mfrpacket|laser|act2|bag|filler|quarry|turtle|quarrychunks|ccpacket|harvester|te|crystal|spotloader|da|apgate|quota|cchttp|lpclamp|lpsec|ncflood|apmdupe|tesla|explode|nukewarn|iddump|dynamite|scmod|cartmine|cartchunk|frame|rpguard|wrench|ic2machine|place|turtleplace>");
             return true;
         }
         String s = args[0].toLowerCase();
@@ -148,6 +148,7 @@ public class TLFixTest extends JavaPlugin {
             else if (s.equals("dynamite")) dynamite(sender);
             else if (s.equals("scmod")) scmod(sender);
             else if (s.equals("cartmine")) cartmine(sender);
+            else if (s.equals("cartchunk")) cartchunk(sender);
             else if (s.equals("frame")) frame(sender);
             else if (s.equals("rpguard")) rpguard(sender);
             else if (s.equals("wrench")) wrench(sender);
@@ -1311,6 +1312,82 @@ public class TLFixTest extends JavaPlugin {
         } catch (Throwable t) {
             return "ERR:" + t;
         }
+    }
+
+    /**
+     * Drives the Steve\'s Carts chunk-loader cap (TLiteSC.chunkAllowed -> TLiteChunkQuota.scClaim).
+     * With the shared per-player limit forced to 3: an offline owner\'s loader is refused by the
+     * online gate; a recently-seen owner gets exactly 3 of 5 cart loaders active (the rest disabled
+     * but listed); cart loaders share the budget with ChickenChunks loaders of the same owner; and
+     * releasing an active loader frees the budget for a disabled one.
+     */
+    private void cartchunk(CommandSender sender) throws Exception {
+        java.io.File cfg = new java.io.File("config/ChunkLoaderConversion.cfg");
+        java.io.FileWriter w = new java.io.FileWriter(cfg);
+        w.write("additionalpipes.chunkloader.enabled=false\nchunkloader.maxchunksperplayer=3\n");
+        w.close();
+
+        final yc wref = world();
+
+        // Owner offline (never marked seen): the online gate refuses the loader.
+        boolean offlineActive = TLiteSC.chunkAllowed(ownedCart(wref, "CartOffline"));
+
+        // Owner treated as recently online, so the count cap is what is under test.
+        markSeen("CartCap");
+        int allowed = 0;
+        vswe.stevescarts.Carts.entMCBase[] carts = new vswe.stevescarts.Carts.entMCBase[5];
+        for (int i = 0; i < 5; i++) {
+            carts[i] = ownedCart(wref, "CartCap");
+            if (TLiteSC.chunkAllowed(carts[i])) allowed++;
+        }
+        int active = TLiteChunkQuota.activeCount("CartCap");
+        int disabled = TLiteChunkQuota.disabledCount("CartCap");
+        int listed = TLiteChunkQuota.describe("CartCap").size();
+
+        // Shared budget: two ChickenChunks loaders plus carts, same owner, one limit of 3.
+        markSeen("CartShare");
+        for (int i = 0; i < 2; i++) {
+            final int xi = i * 16;
+            codechicken.chunkloader.IChickenChunkLoader fake = new codechicken.chunkloader.IChickenChunkLoader() {
+                public String getOwner() { return "CartShare"; }
+                public Object getMod() { return null; }
+                public yc getWorld() { return wref; }
+                public codechicken.core.BlockCoord getPosition() { return new codechicken.core.BlockCoord(xi, 0, 0); }
+                public void deactivate() { }
+                public java.util.Collection getChunks() { return null; }
+            };
+            TLiteChunkQuota.ccClaim(fake);
+        }
+        boolean shareFirst = TLiteSC.chunkAllowed(ownedCart(wref, "CartShare"));   // 2 cc + this = 3, allowed
+        boolean shareSecond = TLiteSC.chunkAllowed(ownedCart(wref, "CartShare"));  // 4th, refused
+        int shareActive = TLiteChunkQuota.activeCount("CartShare");
+
+        // Releasing an active cart frees the budget for a previously-disabled one.
+        TLiteSC.chunkReleased(carts[0]);
+        boolean reclaim = TLiteSC.chunkAllowed(carts[4]);
+        int afterActive = TLiteChunkQuota.activeCount("CartCap");
+
+        sender.sendMessage(TAG + "cartchunk: offlineActive=" + offlineActive
+                + ", cap allowed " + allowed + "/5 (active " + active + ", disabled " + disabled + ", listed " + listed + ")"
+                + ", shared first=" + shareFirst + " second=" + shareSecond + " (active " + shareActive + ")"
+                + ", afterRelease reclaim=" + reclaim + " active=" + afterActive
+                + "  (expect offlineActive=false; allowed 3/5 active 3 disabled 2 listed 5;"
+                + " shared first=true second=false active 3; reclaim=true active 3)");
+    }
+
+    private vswe.stevescarts.Carts.entMCBase ownedCart(yc w, String owner) {
+        vswe.stevescarts.Carts.entMCBase cart = new vswe.stevescarts.Carts.entMCBase(w);
+        bq nbt = new bq();
+        nbt.a("tliteOwner", owner);
+        TLiteSC.loadOwner(cart, nbt);
+        return cart;
+    }
+
+    /** Prime the quota\'s last-seen stamp so the owner counts as online (grace window). */
+    private void markSeen(String owner) throws Exception {
+        java.lang.reflect.Field f = TLiteChunkQuota.class.getDeclaredField("lastSeen");
+        f.setAccessible(true);
+        ((java.util.Map) f.get(null)).put(owner, Long.valueOf(System.currentTimeMillis()));
     }
 
     /**

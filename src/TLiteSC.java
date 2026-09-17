@@ -80,4 +80,43 @@ public class TLiteSC {
         }
         return false;
     }
+
+    // ------------------------------------------------------------ chunk-loader cap
+
+    /**
+     * The Steve's Carts chunk-loader module force-loads chunks through ForgeChunkManager, outside the
+     * shared chunk-loader quota that ChickenChunks, the Dimensional Anchor and the Teleport Tether
+     * use. Each cart loader is now cut to a single chunk (PatchSC) and counted against its owner's
+     * shared per-player limit here: refused at activation and skipped as the cart moves once the
+     * owner is at their limit or offline past the grace window. A cart with no recorded owner
+     * (deployed before this patch, or not by a player) is not capped, matching the module edit guard.
+     */
+    public static boolean chunkAllowed(entMCBase cart) {
+        return chunkClaim(cart, false);
+    }
+
+    /** As chunkAllowed, but messages the owner when the loader is refused (used at activation). */
+    public static boolean chunkAllowedAnnounce(entMCBase cart) {
+        return chunkClaim(cart, true);
+    }
+
+    private static boolean chunkClaim(entMCBase cart, boolean announce) {
+        String owner = (String) owners.get(cart);
+        if (owner == null) {
+            return true;
+        }
+        return TLiteChunkQuota.scClaim(owner, cartKey(cart), announce);
+    }
+
+    /** Appended to entMCBase.dropChunkLoading: drop this cart from the shared loader registry. */
+    public static void chunkReleased(entMCBase cart) {
+        String owner = (String) owners.get(cart);
+        if (owner != null) {
+            TLiteChunkQuota.scRelease(owner, cartKey(cart));
+        }
+    }
+
+    private static String cartKey(entMCBase cart) {
+        return "cart:" + System.identityHashCode(cart);
+    }
 }

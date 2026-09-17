@@ -1094,6 +1094,32 @@ only on open ground.
 
 </details>
 
+<details>
+<summary><b><code>carts</code>: the Chunk Loader cart module is capped like every other loader (chunk loading)</b></summary>
+
+**The bug.** The Chunk Loader module (`31997:49`) force-loads chunks through `ForgeChunkManager`
+on an `ENTITY` ticket, outside the shared per-player quota that ChickenChunks, the Dimensional
+Anchor and the Teleport Tether register with (see [ChickenChunks](#chickenchunks-1310)). It also
+force-loaded a 3x3 block of chunks (`setChunkListDepth(9)` and a `-1..1` double loop in
+`entMCBase.loadChunks`), so one cart kept nine chunks live and none of it counted against the cap.
+
+**The patch (same `carts` flag).** `entMCBase.loadChunks(Ticket,x,z)` (the single point both the
+module and the chunk-crossing listener reach) is cut to force only the cart's own chunk (the two
+loop starts and bounds are flipped to `0`). The loader is then registered in the shared
+`TLiteChunkQuota` as the cart's owner, keyed by a stable per-cart id because the cart moves:
+`initChunkLoading` refuses (requests no ticket, messages the owner) when the owner is at their limit
+or offline past the grace window, `loadChunks` re-checks the same as the cart moves, and
+`dropChunkLoading` releases the registry entry. A cart with no recorded owner (deployed before this
+patch, or not by a player) is not capped, matching the module edit guard.
+
+**Verified** on the test server by the `cartchunk` scenario (with the shared limit forced to 3):
+an offline owner's cart loader is refused by the online gate; a recently-seen owner gets exactly 3
+of 5 cart loaders active with the other 2 disabled but listed; cart loaders share the budget with
+the owner's ChickenChunks loaders (2 anchors + 1 cart fill the limit, the next cart is refused); and
+releasing an active loader frees the budget for a disabled one. The `cartmine` guard still passes.
+
+</details>
+
 ---
 
 ## AdvancedPowerManagement 1.1.55
@@ -1235,7 +1261,7 @@ server with stock or patched jars, runs the scenarios from the console and print
 
 ```sh
 test/run.sh stock   probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle ccpacket harvester
-test/run.sh patched probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle ccpacket harvester
+test/run.sh patched probe unifier ee3 entropy catalyst wrath monitor treecap spawner creative dsu mfrpacket laser act2 bag filler quarry quarrychunks turtle ccpacket harvester cartmine cartchunk frame rpguard
 ```
 
 The protection scenarios claim an area for `Owner` with stock GriefPrevention and act as the
