@@ -1,4 +1,4 @@
-name: TekkitLiteCustomizer
+name: TekkitCustomizer
 main: me.ryanhamshire.TekkitCustomizer.TekkitCustomizer
 softdepend: [Multiverse-Core, My Worlds, Transporter, MystCraft, GriefPrevention]
 version: 1.6

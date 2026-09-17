@@ -553,7 +553,7 @@ Carts items, not Balkon's, whose own `dynamite` fix is separate.)
 GriefPrevention's per-claim explosives toggle is honored: it strips claimed blocks unless the
 owner has enabled explosives for that claim (`/claimexplosions`, `Claim.areExplosivesAllowed`),
 which is off by default. So a nuke set off inside or outside a claim does no block damage there
-until the owner opts in. To catch that opt-in case, the TekkitLiteCustomizer plugin warns a player
+until the owner opts in. To catch that opt-in case, the TekkitCustomizer plugin warns a player
 who places a Nuke block (237) inside a claim that currently has explosives enabled, so they know
 it will actually damage the claim. The plugin reads GriefPrevention through a `MethodHandles`
 bridge (`ClaimQuery`) rather than `getField`, since GriefPrevention has a Vault `Economy` field
@@ -1202,6 +1202,51 @@ dimension id crashed the link server-side.
 
 ---
 
+## Dimensional Doors 1.3.2
+
+Not installed on the server. It ships in the client pack (which is why the Rift Blade shows in
+NEI), but no server jar was present, so on the server the rift items do nothing. This is an
+optional, patched build for anyone who wants Dimensional Doors working on the server without the
+grief, kept out of the deployed zip and taken from the repo instead.
+
+<details>
+<summary><b><code>rifts</code>: rift and door items respect claims (protection)</b></summary>
+
+**The bug.** The Dimensional Door, Chaos Door and Exit Door items, the Rift Blade, and the Rift
+Signature place blocks in whatever world the holder is in with no protection check, so a player can
+drop a rift or a dimensional door inside someone else's claim.
+
+**The patch.** Each player-facing use is checked as the holding player through `TLiteProtect`. The
+door and signature `onItemUse` (`itemDimDoor`, which the Chaos and Exit doors inherit, plus
+`ItemRiftBlade` and `itemLinkSignature`) return early (`false`, so the item is not consumed) when
+the player may not build at the clicked block. The Rift Blade's air-cast rift-open routes the
+vanilla `ItemDoor` placement (`tx.a`) through `TLiteDD.placeDoor(..., player)`, which places only
+where the player may build; refused, it does nothing. So rifts and doors cannot land in a claim,
+and the Rift Blade stays a working melee weapon that only opens rifts where its holder could build.
+In-dimension edits (pocket dims, Limbo, dungeon generation) are untouched: there are no claims
+there.
+
+Two switches in `config/DimensionalDoorsTweaks.cfg` (written on first load) tune the non-dimension
+items. `riftBlade.swordOnly` (default `false`) disables the Rift Blade's rift-opening outright: its
+right-click methods (air-cast, charged use and block use) become no-ops, so it is a plain melee
+sword everywhere regardless of claims. `riftRemover.enabled` (default `true`) can make the Rift
+Remover inert; the Remover only closes rifts (via `dimHelper.removeRift`, ray-traced onto a rift
+block) and never creates anything, so it is left on by default. The mod's own per-item
+`enable ... crafting` flags still govern what can be crafted at all.
+
+The Rift Goggles reveal nearby rifts purely client-side, so there is nothing to guard or toggle
+server-side; the Stable Fabric item is only a door crafting ingredient (its right-click is a
+leftover debug print that places nothing), so it needs no guard either.
+
+**Verified**: build asserts the exact counts (3 `onItemUse` guards, 2 blade placement redirects,
+3 sword-only gates, 1 rift-remover gate);
+the target classes are v50, so no stack-map frames are needed. Not exercised on the test server,
+which does not run Dimensional Doors.
+
+</details>
+
+---
+
 ## Plugins
 
 Two Bukkit plugins used to cover these bugs. The patches replace what they did:
@@ -1209,12 +1254,25 @@ Two Bukkit plugins used to cover these bugs. The patches replace what they did:
 | Plugin | What it did | Now |
 |---|---|---|
 | GriefPrevention-TLite | GriefPrevention 7.6.2 plus claim checks for the Entropy Accelerator, Vibration Catalyst, Minium Stone, Wrath Igniter and ME Storage Monitor | Removed. `entropy`, `catalyst`, `protect`, `wrathigniter` and `monitor` do this inside the mods and work with stock GriefPrevention 7.6.2 |
-| TekkitLiteCustomizer | TekkitCustomizer 1.6 item bans plus `AdjacentBlockDupePatch`, which refused placing a Block Breaker next to a Deep Storage Unit | Dupe ban removed, `dsudupe` fixes it inside MFR. The item bans stay |
+| TekkitCustomizer | TekkitCustomizer 1.6 item bans plus `AdjacentBlockDupePatch`, which refused placing a Block Breaker next to a Deep Storage Unit | Dupe ban removed, `dsudupe` fixes it inside MFR. The item bans stay |
 
-`plugins/TekkitLiteCustomizer` is the plugin's source, recovered from IntelliJ's local history:
-`src/` is what `build.sh` builds into `TekkitLiteCustomizer.jar`, `version-history/` has every
+`plugins/TekkitCustomizer` is the plugin's source, recovered from IntelliJ's local history:
+`src/` is what `build.sh` builds into `TekkitCustomizer.jar`, `version-history/` has every
 recovered version in order, and `decompiled-deployed-jar/` is the jar that ran on the server
 before, dupe ban included.
+
+### What changed in TekkitCustomizer
+
+- The `/loaders [player]` command and the `tekkitcustomizer.loaders.others` permission, backed by
+  `LoaderRegistry`, which reads the coremod's shared chunk-loader registry (`TLiteChunkQuota`) by
+  reflection.
+- GriefPrevention awareness through `ClaimQuery`, which reaches GriefPrevention's data store
+  (`getClaimAt`, `areExplosivesAllowed`) by reflection, so it works with the stock jar and takes no
+  hard dependency (`GriefPrevention` is only a `softdepend`).
+- The over-limit chunk-loader login reminder.
+
+and drops `AdjacentBlockDupePatch` (the ban on placing a Block Breaker next to a Deep Storage Unit);
+`dsudupe` fixes that dupe inside MineFactoryReloaded instead. The item ban list is unchanged.
 
 ---
 
@@ -1227,7 +1285,7 @@ before, dupe ban included.
 ./build.sh
 ```
 
-Builds every patched jar, `TLiteFixes-coremod.jar` and `TekkitLiteCustomizer.jar`. Needs a Java 8 `javac` for the helper
+Builds every patched jar, `TLiteFixes-coremod.jar` and `TekkitCustomizer.jar`. Needs a Java 8 `javac` for the helper
 classes and the plugin, ASM, and the server's `mcpcplus.jar`.
 
 Override paths with `MODS`, `COREMODS`, `MCPC`, `MFR_SRC`, `EE3_SRC`, `AE_SRC`, `FZ_SRC`, `TC_SRC`,
@@ -1309,7 +1367,7 @@ And in the **server's** `plugins/` folder, at the same time as the jars above:
 | Replace | With |
 |---|---|
 | `GriefPrevention-TLiteEvents.jar` | stock GriefPrevention 7.6.2. Same version, so `GriefPreventionData` carries over |
-| `TekkitLiteCustomizer.jar` | `TekkitLiteCustomizer.jar` from this repo |
+| `TekkitCustomizer.jar` | `TekkitCustomizer.jar` from this repo |
 
 Swap the plugins only together with the patched jars. The old plugin versions are what block
 the claim bypasses and the DSU dupe on stock jars.

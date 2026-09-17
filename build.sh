@@ -42,6 +42,7 @@ APM_SRC="${APM_SRC:-$MODS/AdvancedPowerManagement-1.1.55-IC2_1.112.jar}"
 ARS_SRC="${ARS_SRC:-$MODS/adv-repulsion-systems-52.0.6.jar}"
 MPS_SRC="${MPS_SRC:-$MODS/ModularPowersuits-0.3.2-199.jar}"
 MYST_SRC="${MYST_SRC:-$MODS/mystcraft-uni-1.4.7-0.10.1.00.zip}"
+DD_SRC="${DD_SRC:-DimensionalDoors-1.4.7 v1.3.2.zip}"
 PCC="${PCC:-$COREMODS/PowerCrystalsCore-1.0.3-34.jar}"
 TC_SRC="${TC_SRC:-$COREMODS/[1.4.6]TreeCapitator.Forge.1.4.6.r07.Uni.CoreMod.jar}"
 NEI_SRC="${NEI_SRC:-$COREMODS/NotEnoughItems 1.4.7.0.jar}"
@@ -54,7 +55,7 @@ JAVAC8="${JAVAC8:-/usr/lib/jvm/java-8-openjdk/bin/javac}"
 [ -f "$ASM" ]    || { echo "ASM not found at $ASM, set ASM=..." >&2; exit 1; }
 [ -x "$JAVAC8" ] || { echo "Java 8 javac not found at $JAVAC8, set JAVAC8=..." >&2; exit 1; }
 [ -f "$MCPC" ]   || { echo "mcpcplus.jar not found at $MCPC, copy it from the server or set MCPC=..." >&2; exit 1; }
-for j in "$MFR_SRC" "$EE3_SRC" "$AE_SRC" "$FZ_SRC" "$PCC" "$IC2_SRC" "$IMMIBIS_SRC" "$RPCORE_SRC" "$BC_SRC" "$CC_SRC" "$TE_SRC" "$COFH_SRC" "$IRONCHEST_SRC" "$LP_SRC" "$AP_SRC" "$CHUNKS_SRC" "$DA_SRC" "$NC_SRC" "$OT_SRC" "$WM_SRC" "$WR_SRC" "$SC_SRC" "$APM_SRC" "$ARS_SRC" "$MPS_SRC" "$MYST_SRC" "$TC_SRC" "$NEI_SRC" "$CCC" "$BSPKRS"; do
+for j in "$MFR_SRC" "$EE3_SRC" "$AE_SRC" "$FZ_SRC" "$PCC" "$IC2_SRC" "$IMMIBIS_SRC" "$RPCORE_SRC" "$BC_SRC" "$CC_SRC" "$TE_SRC" "$COFH_SRC" "$IRONCHEST_SRC" "$LP_SRC" "$AP_SRC" "$CHUNKS_SRC" "$DA_SRC" "$NC_SRC" "$OT_SRC" "$WM_SRC" "$WR_SRC" "$SC_SRC" "$APM_SRC" "$ARS_SRC" "$MPS_SRC" "$MYST_SRC" "$DD_SRC" "$TC_SRC" "$NEI_SRC" "$CCC" "$BSPKRS"; do
   [ -f "$j" ] || { echo "not found: $j" >&2; exit 1; }
 done
 
@@ -67,11 +68,11 @@ mkdir -p build/cls build/tool
 "$JAVAC8" -nowarn -source 1.6 -target 1.6 \
   -bootclasspath "$(dirname "$JAVAC8")/../jre/lib/rt.jar" \
   -cp "$MCPC:$MFR_SRC:$PCC:$EE3_SRC:$IC2_SRC:$IMMIBIS_SRC:$RPCORE_SRC:$BC_SRC:$CC_SRC:$TE_SRC:$COFH_SRC:$LP_SRC:$WM_SRC:$WR_SRC:$SC_SRC:$APM_SRC:$CCC:$TC_SRC:$BSPKRS:$NEI_SRC:$CCC:$CHUNKS_SRC:$NC_SRC" -d build/cls \
-  src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java src/TLiteImmibis.java src/TLiteBC.java src/TLiteTurtle.java src/TLiteCC.java src/TLiteTE.java src/TLiteIronChest.java src/TLiteLP.java src/TLiteNC.java src/TLiteWM.java src/TLiteWR.java src/TLiteSC.java src/TLiteAPM.java src/TLiteMPS.java src/TLiteAP.java src/TLiteChunkQuota.java src/TLiteARS.java src/TLiteARSDrops.java 2>&1 \
+  src/TLiteProtect.java src/TLiteMFR.java src/TLiteEE3.java src/TLiteTreeCap.java src/TLiteNEI.java src/TLiteImmibis.java src/TLiteBC.java src/TLiteTurtle.java src/TLiteCC.java src/TLiteTE.java src/TLiteIronChest.java src/TLiteLP.java src/TLiteNC.java src/TLiteWM.java src/TLiteWR.java src/TLiteSC.java src/TLiteAPM.java src/TLiteMPS.java src/TLiteAP.java src/TLiteChunkQuota.java src/TLiteARS.java src/TLiteARSDrops.java src/TLiteDD.java 2>&1 \
   | grep -vE 'bootstrap class path|source value 1\.6|target value 1\.6|options|unchecked' || true
 
 for f in build/cls/TLiteProtect.class build/cls/TLiteMFR.class build/cls/TLiteEE3.class \
-         build/cls/TLiteTreeCap.class build/cls/TLiteNEI.class build/cls/TLiteImmibis.class build/cls/TLiteBC.class build/cls/TLiteTurtle.class build/cls/TLiteCC.class build/cls/TLiteTE.class build/cls/TLiteIronChest.class build/cls/TLiteLP.class build/cls/TLiteNC.class build/cls/TLiteWM.class build/cls/TLiteWR.class build/cls/TLiteSC.class build/cls/TLiteAPM.class build/cls/TLiteMPS.class build/cls/TLiteAP.class build/cls/TLiteChunkQuota.class build/cls/TLiteARS.class build/cls/TLiteARSDrops.class; do
+         build/cls/TLiteTreeCap.class build/cls/TLiteNEI.class build/cls/TLiteImmibis.class build/cls/TLiteBC.class build/cls/TLiteTurtle.class build/cls/TLiteCC.class build/cls/TLiteTE.class build/cls/TLiteIronChest.class build/cls/TLiteLP.class build/cls/TLiteNC.class build/cls/TLiteWM.class build/cls/TLiteWR.class build/cls/TLiteSC.class build/cls/TLiteAPM.class build/cls/TLiteMPS.class build/cls/TLiteAP.class build/cls/TLiteChunkQuota.class build/cls/TLiteARS.class build/cls/TLiteARSDrops.class build/cls/TLiteDD.class; do
   [ -f "$f" ] || { echo "helper class missing after compile: $f" >&2; exit 1; }
 done
 
@@ -158,6 +159,10 @@ patch_one "Steve's Carts" "$SC_SRC" "StevesCarts2.0.0.a62-patched.zip" \
           PatchSC.java "carts" \
           build/cls/TLiteSC.class build/cls/TLiteProtect.class
 
+patch_one "Dimensional Doors" "$DD_SRC" "DimensionalDoors-1.4.7 v1.3.2-patched.zip" \
+          PatchDD.java "rifts" \
+          build/cls/TLiteDD.class build/cls/TLiteProtect.class
+
 patch_one "AdvancedPowerManagement" "$APM_SRC" "AdvancedPowerManagement-1.1.55-IC2_1.112-patched.jar" \
           PatchAPM.java "guibutton,outputdupe" \
           build/cls/TLiteAPM.class
@@ -200,18 +205,18 @@ rm -f TLiteFixes-coremod.jar
 "$(dirname "$JAVAC8")/jar" cfm TLiteFixes-coremod.jar build/coremod.mf -C build/coremod .
 echo "OK  wrote TLiteFixes-coremod.jar"
 
-# Bukkit plugin: TekkitLiteCustomizer, the item ban plugin, without its old Block Breaker next to
+# Bukkit plugin: TekkitCustomizer, the item ban plugin, without its old Block Breaker next to
 # Deep Storage Unit placement ban (dsudupe fixes that inside MFR).
 rm -rf build/customizer
 mkdir -p build/customizer
 "$JAVAC8" -nowarn -source 1.6 -target 1.6 \
   -bootclasspath "$(dirname "$JAVAC8")/../jre/lib/rt.jar" \
   -cp "$MCPC" -d build/customizer \
-  plugins/TekkitLiteCustomizer/src/me/ryanhamshire/TekkitCustomizer/*.java 2>&1 \
+  plugins/TekkitCustomizer/src/me/ryanhamshire/TekkitCustomizer/*.java 2>&1 \
   | grep -vE 'bootstrap class path|source value 1\.6|target value 1\.6|options|unchecked|deprecat|^Note:' || true
 [ -f build/customizer/me/ryanhamshire/TekkitCustomizer/TekkitCustomizer.class ] \
-  || { echo "TekkitLiteCustomizer failed to compile" >&2; exit 1; }
-cp plugins/TekkitLiteCustomizer/plugin.yml build/customizer/
-rm -f TekkitLiteCustomizer.jar
-(cd build/customizer && "$(dirname "$JAVAC8")/jar" cf ../../TekkitLiteCustomizer.jar .)
-echo "OK  wrote TekkitLiteCustomizer.jar"
+  || { echo "TekkitCustomizer failed to compile" >&2; exit 1; }
+cp plugins/TekkitCustomizer/plugin.yml build/customizer/
+rm -f TekkitCustomizer.jar
+(cd build/customizer && "$(dirname "$JAVAC8")/jar" cf ../../TekkitCustomizer.jar .)
+echo "OK  wrote TekkitCustomizer.jar"
